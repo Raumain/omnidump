@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type SubmitEvent } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { Button } from '../components/ui/button'
 import {
@@ -71,6 +71,9 @@ function App() {
 
   const savedConnections: SavedConnection[] =
     savedConnectionsQuery.data?.success ? savedConnectionsQuery.data.connections : []
+  const activeConnection = queryClient.getQueryData<SavedConnection>([
+    'active-connection',
+  ])
 
   const handleSelectConnection = (connection: SavedConnection) => {
     const driver = connection.driver
@@ -78,6 +81,8 @@ function App() {
       driver === 'mysql' || driver === 'sqlite' || driver === 'postgres'
         ? driver
         : 'postgres'
+
+    queryClient.setQueryData(['active-connection'], connection)
 
     setConnectionName(connection.name)
     setCredentials({
@@ -317,6 +322,11 @@ function App() {
               </FormItem>
 
               <div className="flex gap-2">
+                {activeConnection ? (
+                  <Button type="button" variant="outline" asChild className="flex-1">
+                    <Link to="/schema">Explore Schema</Link>
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="secondary"
