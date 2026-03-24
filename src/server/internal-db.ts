@@ -1,3 +1,4 @@
+import '@tanstack/react-start/server-only'
 import { Database } from "bun:sqlite";
 
 export const db = new Database("omnidump.db");

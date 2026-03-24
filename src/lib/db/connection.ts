@@ -1,3 +1,4 @@
+import '@tanstack/react-start/server-only'
 import { SQL } from "bun";
 import {
   Kysely,

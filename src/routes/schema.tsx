@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { Download } from 'lucide-react'
 
 import { Button } from '../components/ui/button'
 import {
@@ -66,6 +67,11 @@ function SchemaPage() {
   const schemaError = schemaData && 'error' in schemaData ? schemaData.error : null
   const tables = schemaData && Array.isArray(schemaData) ? schemaData : []
 
+  const handleDownloadDump = () => {
+    const url = `/api/dump?connectionId=${activeConnection.id}`
+    window.open(url, '_blank')
+  }
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
@@ -73,9 +79,15 @@ function SchemaPage() {
           <h1 className="text-xl font-semibold">Schema Explorer</h1>
           <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
         </div>
-        <Button variant="outline" asChild>
-          <Link to="/">Back</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" onClick={handleDownloadDump}>
+            <Download />
+            Download SQL Dump
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/">Back</Link>
+          </Button>
+        </div>
       </div>
 
       {schemaQuery.isLoading ? (
