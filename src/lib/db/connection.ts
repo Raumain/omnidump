@@ -1,15 +1,22 @@
 import { SQL } from "bun";
 import {
-  DummyDriver,
   Kysely,
   MysqlAdapter,
+  MysqlIntrospector,
   MysqlQueryCompiler,
   PostgresAdapter,
+  PostgresIntrospector,
   PostgresQueryCompiler,
   SqliteAdapter,
+  SqliteIntrospector,
   SqliteQueryCompiler,
-  type DatabaseIntrospector,
+  type CompiledQuery,
+  type DatabaseConnection,
   type Dialect,
+  type Driver,
+  type QueryResult,
+  type TransactionSettings,
+  validateTransactionSettings,
 } from "kysely";
 
 export type DbDriver = "postgres" | "mysql" | "sqlite";
@@ -23,37 +30,96 @@ export interface DbCredentials {
   database?: string;
 }
 
-type RawDatabase = Record<string, never>;
+class BunDatabaseConnection implements DatabaseConnection {
+  constructor(private readonly connection: SQL) { }
 
-const createNoopIntrospector = (): DatabaseIntrospector => ({
-  getSchemas: async () => [],
-  getTables: async () => [],
-  getMetadata: async () => ({ tables: [] }),
-});
+  async executeQuery<R>(compiledQuery: CompiledQuery): Promise<QueryResult<R>> {
+    const rows = await this.connection.unsafe<R[]>(
+      compiledQuery.sql,
+      [...compiledQuery.parameters],
+    );
 
-const getDialect = (dialect: DbDriver): Dialect => {
-  switch (dialect) {
+    return { rows };
+  }
+
+  async *streamQuery<R>(
+    compiledQuery: CompiledQuery,
+  ): AsyncIterableIterator<QueryResult<R>> {
+    yield await this.executeQuery<R>(compiledQuery);
+  }
+}
+
+class BunDriver implements Driver {
+  private readonly dbConnection: BunDatabaseConnection;
+
+  constructor(private readonly connection: SQL) {
+    this.dbConnection = new BunDatabaseConnection(connection);
+  }
+
+  async init(): Promise<void> { }
+
+  async acquireConnection(): Promise<DatabaseConnection> {
+    return this.dbConnection;
+  }
+
+  async beginTransaction(
+    _connection: DatabaseConnection,
+    settings: TransactionSettings,
+  ): Promise<void> {
+    validateTransactionSettings(settings);
+    await this.connection.unsafe("begin");
+
+    if (settings.isolationLevel) {
+      await this.connection.unsafe(
+        `set transaction isolation level ${settings.isolationLevel}`,
+      );
+    }
+
+    if (settings.accessMode) {
+      await this.connection.unsafe(`set transaction ${settings.accessMode}`);
+    }
+  }
+
+  async commitTransaction(_connection: DatabaseConnection): Promise<void> {
+    await this.connection.unsafe("commit");
+  }
+
+  async rollbackTransaction(_connection: DatabaseConnection): Promise<void> {
+    await this.connection.unsafe("rollback");
+  }
+
+  async releaseConnection(_connection: DatabaseConnection): Promise<void> { }
+
+  async destroy(): Promise<void> {
+    await this.connection.close();
+  }
+}
+
+const getDialect = (driver: DbDriver, connection: SQL): Dialect => {
+  switch (driver) {
     case "postgres":
       return {
         createAdapter: () => new PostgresAdapter(),
-        createDriver: () => new DummyDriver(),
-        createIntrospector: () => createNoopIntrospector(),
+        createDriver: () => new BunDriver(connection),
+        createIntrospector: (db) => new PostgresIntrospector(db),
         createQueryCompiler: () => new PostgresQueryCompiler(),
       };
     case "mysql":
       return {
         createAdapter: () => new MysqlAdapter(),
-        createDriver: () => new DummyDriver(),
-        createIntrospector: () => createNoopIntrospector(),
+        createDriver: () => new BunDriver(connection),
+        createIntrospector: (db) => new MysqlIntrospector(db),
         createQueryCompiler: () => new MysqlQueryCompiler(),
       };
     case "sqlite":
       return {
         createAdapter: () => new SqliteAdapter(),
-        createDriver: () => new DummyDriver(),
-        createIntrospector: () => createNoopIntrospector(),
+        createDriver: () => new BunDriver(connection),
+        createIntrospector: (db) => new SqliteIntrospector(db),
         createQueryCompiler: () => new SqliteQueryCompiler(),
       };
+    default:
+      throw new Error(`Unsupported driver: ${String(driver)}`);
   }
 };
 
@@ -75,8 +141,10 @@ export const createConnection = (credentials: DbCredentials): SQL => {
   });
 };
 
-export const getQueryBuilder = (dialect: DbDriver): Kysely<RawDatabase> => {
-  return new Kysely<RawDatabase>({
-    dialect: getDialect(dialect),
+export const getKyselyInstance = (credentials: DbCredentials): Kysely<any> => {
+  const connection = createConnection(credentials);
+
+  return new Kysely<any>({
+    dialect: getDialect(credentials.driver, connection),
   });
 };
