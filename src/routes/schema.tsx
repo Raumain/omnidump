@@ -1,7 +1,18 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { Download } from 'lucide-react'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../components/ui/alert-dialog'
 import { Button } from '../components/ui/button'
 import {
   Card,
@@ -9,10 +20,29 @@ import {
   CardHeader,
   CardTitle,
 } from '../components/ui/card'
+import type { DbCredentials } from '../lib/db/connection'
 import type { SavedConnection } from '../server/connection-fns'
-import { getDatabaseSchemaFn } from '../server/schema-fns'
+import { clearTableDataFn, getDatabaseSchemaFn } from '../server/schema-fns'
 
 export const Route = createFileRoute('/schema')({ component: SchemaPage })
+
+const getCredentialsFromConnection = (connection: SavedConnection): DbCredentials => {
+  const driver = connection.driver
+
+  const normalizedDriver: DbCredentials['driver'] =
+    driver === 'mysql' || driver === 'sqlite' || driver === 'postgres'
+      ? driver
+      : 'postgres'
+
+  return {
+    driver: normalizedDriver,
+    host: connection.host ?? undefined,
+    port: connection.port ?? undefined,
+    user: connection.user ?? undefined,
+    password: connection.password ?? undefined,
+    database: connection.database_name ?? undefined,
+  }
+}
 
 function SchemaPage() {
   const queryClient = useQueryClient()
@@ -67,6 +97,45 @@ function SchemaPage() {
   const schemaError = schemaData && 'error' in schemaData ? schemaData.error : null
   const tables = schemaData && Array.isArray(schemaData) ? schemaData : []
 
+  const clearTableMutation = useMutation({
+    mutationFn: async (tableName: string) => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
+      const credentials = getCredentialsFromConnection(activeConnection)
+
+      return clearTableDataFn({
+        data: {
+          credentials,
+          tableName,
+        },
+      })
+    },
+    onSuccess: async (result, tableName) => {
+      if (result.success) {
+        alert(result.message)
+        await queryClient.invalidateQueries({
+          queryKey: ['schema', activeConnection?.id],
+        })
+        return
+      }
+
+      alert(result.error)
+      console.error(`Failed to clear table ${tableName}:`, result.error)
+    },
+    onError: (error, tableName) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+
+      alert(message)
+      console.error(`Failed to clear table ${tableName}:`, message)
+    },
+  })
+
+  const clearingTableName = clearTableMutation.isPending
+    ? clearTableMutation.variables
+    : null
+
   const handleDownloadDump = () => {
     const url = `/api/dump?connectionId=${activeConnection.id}`
     window.open(url, '_blank')
@@ -97,6 +166,12 @@ function SchemaPage() {
         <p className="text-sm text-muted-foreground">Introspecting database...</p>
       ) : null}
 
+      {clearingTableName ? (
+        <p className="text-sm text-muted-foreground">
+          Clearing data from {clearingTableName}...
+        </p>
+      ) : null}
+
       {schemaError ? (
         <Card>
           <CardContent className="pt-6 text-sm text-destructive">{schemaError}</CardContent>
@@ -107,8 +182,39 @@ function SchemaPage() {
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {tables.map((table) => (
             <Card key={table.tableName}>
-              <CardHeader>
+              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
                 <CardTitle className="text-base">{table.tableName}</CardTitle>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={clearTableMutation.isPending}
+                    >
+                      {clearingTableName === table.tableName ? 'Clearing...' : 'Clear Data'}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear table data?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete ALL rows from {table.tableName}? This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        variant="destructive"
+                        onClick={() => {
+                          clearTableMutation.mutate(table.tableName)
+                        }}
+                      >
+                        {clearingTableName === table.tableName ? 'Clearing...' : 'Continue'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2">

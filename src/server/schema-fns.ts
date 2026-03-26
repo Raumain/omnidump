@@ -27,6 +27,15 @@ type SchemaTable = {
 
 type GetDatabaseSchemaResult = SchemaTable[] | { error: string };
 
+type ClearTableDataInput = {
+  credentials: DbCredentials;
+  tableName: string;
+};
+
+type ClearTableDataResult =
+  | { success: true; message: string }
+  | { success: false; error: string };
+
 const hasDatabaseName = (
   input: ActiveConnectionInput,
 ): input is {
@@ -78,6 +87,30 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : "Unknown error",
+      };
+    } finally {
+      await db.destroy();
+    }
+  });
+
+export const clearTableDataFn = createServerFn({ method: "POST" })
+  .inputValidator((input: ClearTableDataInput) => input)
+  .handler(async ({ data: input }): Promise<ClearTableDataResult> => {
+    const db = getKyselyInstance(input.credentials);
+
+    try {
+      await db.deleteFrom(input.tableName).execute();
+
+      return {
+        success: true,
+        message: `Table ${input.tableName} cleared`,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+
+      return {
+        success: false,
+        error: message,
       };
     } finally {
       await db.destroy();
