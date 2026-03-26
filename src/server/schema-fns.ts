@@ -1,3 +1,5 @@
+import { Glob } from "bun";
+import { resolve } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "kysely";
 
@@ -41,6 +43,17 @@ type WipeAllDataResult =
   | { success: true; message: string }
   | { success: false; error: string };
 
+type RestoreDumpInput = {
+  credentials: DbCredentials;
+  filePath: string;
+};
+
+type RestoreDumpResult =
+  | { success: true }
+  | { success: false; error: string };
+
+const DUMPS_DIRECTORY = "./exports/dumps";
+
 const hasDatabaseName = (
   input: ActiveConnectionInput,
 ): input is {
@@ -71,6 +84,67 @@ const normalizeCredentials = (input: ActiveConnectionInput): DbCredentials => {
       : input.database ?? undefined,
   };
 };
+
+const resolveDumpPath = (filePath: string): string | null => {
+  const normalizedPath = filePath.trim().replaceAll("\\", "/");
+
+  if (!normalizedPath || !normalizedPath.endsWith(".sql")) {
+    return null;
+  }
+
+  const exportsRoot = resolve(DUMPS_DIRECTORY);
+  const fullPath = resolve(exportsRoot, normalizedPath);
+
+  if (fullPath !== exportsRoot && !fullPath.startsWith(`${exportsRoot}/`)) {
+    return null;
+  }
+
+  return fullPath;
+};
+
+export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
+  async (): Promise<string[]> => {
+    try {
+      const glob = new Glob("**/*.sql");
+
+      return Array.from(glob.scanSync({ cwd: DUMPS_DIRECTORY }));
+    } catch {
+      return [];
+    }
+  },
+);
+
+export const restoreDumpFn = createServerFn({ method: "POST" })
+  .inputValidator((input: RestoreDumpInput) => input)
+  .handler(async ({ data: input }): Promise<RestoreDumpResult> => {
+    const fullPath = resolveDumpPath(input.filePath);
+
+    if (!fullPath) {
+      return {
+        success: false,
+        error: "Invalid dump file path.",
+      };
+    }
+
+    const db = getKyselyInstance(input.credentials);
+
+    try {
+      const sqlContent = await Bun.file(fullPath).text();
+
+      await sql.raw(sqlContent).execute(db);
+
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+
+      return {
+        success: false,
+        error: message,
+      };
+    } finally {
+      await db.destroy();
+    }
+  });
 
 export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
   .inputValidator((credentials: ActiveConnectionInput) => credentials)

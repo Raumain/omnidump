@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Download } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   AlertDialog,
@@ -20,11 +22,29 @@ import {
   CardHeader,
   CardTitle,
 } from '../components/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select'
 import type { DbCredentials } from '../lib/db/connection'
 import type { SavedConnection } from '../server/connection-fns'
 import {
   clearTableDataFn,
+  getAvailableDumpsFn,
   getDatabaseSchemaFn,
+  restoreDumpFn,
   wipeAllDataFn,
 } from '../server/schema-fns'
 
@@ -50,6 +70,9 @@ const getCredentialsFromConnection = (connection: SavedConnection): DbCredential
 
 function SchemaPage() {
   const queryClient = useQueryClient()
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false)
+  const [selectedDumpPath, setSelectedDumpPath] = useState('')
+  const [isDumping, setIsDumping] = useState(false)
 
   const activeConnectionQuery = useQuery({
     queryKey: ['active-connection'],
@@ -75,6 +98,12 @@ function SchemaPage() {
       return getDatabaseSchemaFn({ data: activeConnection })
     },
     enabled: !!activeConnection,
+  })
+
+  const availableDumpsQuery = useQuery({
+    queryKey: ['available-dumps'],
+    queryFn: async () => getAvailableDumpsFn(),
+    enabled: isRestoreModalOpen,
   })
 
   if (!activeConnection) {
@@ -166,14 +195,73 @@ function SchemaPage() {
     },
   })
 
+  const restoreDumpMutation = useMutation({
+    mutationFn: async (filePath: string) => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
+      const credentials = getCredentialsFromConnection(activeConnection)
+
+      return restoreDumpFn({
+        data: {
+          credentials,
+          filePath,
+        },
+      })
+    },
+    onSuccess: async (result) => {
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success('Dump restored successfully.')
+      setIsRestoreModalOpen(false)
+      setSelectedDumpPath('')
+      await queryClient.invalidateQueries({
+        queryKey: ['schema', activeConnection?.id],
+      })
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+
+      toast.error(message)
+      console.error('Failed to restore dump:', message)
+    },
+  })
+
   const clearingTableName = clearTableMutation.isPending
     ? clearTableMutation.variables
     : null
   const isWipingAllData = wipeAllDataMutation.isPending
+  const isRestoringDump = restoreDumpMutation.isPending
+  const availableDumps = availableDumpsQuery.data ?? []
 
-  const handleDownloadDump = () => {
-    const url = `/api/dump?connectionId=${activeConnection.id}`
-    window.open(url, '_blank')
+  const handleDownloadDump = async () => {
+    setIsDumping(true)
+
+    try {
+      const response = await fetch(`/api/dump?connectionId=${activeConnection.id}`)
+
+      const result = await response.json().catch(() => null) as
+        | { success?: boolean; error?: string }
+        | null
+
+      if (!response.ok || !result?.success) {
+        const message = result?.error ?? 'Failed to save SQL dump.'
+        toast.error(message)
+        return
+      }
+
+      toast.success('Dump saved to server disk.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      toast.error(message)
+      console.error('Failed to save SQL dump:', message)
+    } finally {
+      setIsDumping(false)
+    }
   }
 
   return (
@@ -184,9 +272,25 @@ function SchemaPage() {
           <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" onClick={handleDownloadDump}>
-            <Download />
-            Download SQL Dump
+          <Button
+            type="button"
+            onClick={() => {
+              void handleDownloadDump()
+            }}
+            disabled={isDumping || isWipingAllData || clearTableMutation.isPending || isRestoringDump}
+          >
+            {isDumping ? <Loader2 className="animate-spin" /> : <Download />}
+            {isDumping ? 'Saving Dump...' : 'Download SQL Dump'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isWipingAllData || clearTableMutation.isPending || isRestoringDump}
+            onClick={() => {
+              setIsRestoreModalOpen(true)
+            }}
+          >
+            Restore Dump
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -226,6 +330,74 @@ function SchemaPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={isRestoreModalOpen}
+        onOpenChange={(open) => {
+          setIsRestoreModalOpen(open)
+
+          if (!open) {
+            setSelectedDumpPath('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore local SQL dump</DialogTitle>
+            <DialogDescription>
+              Select a dump from the exports directory to restore it into the active database.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            {availableDumpsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading dumps...</p>
+            ) : null}
+
+            {!availableDumpsQuery.isLoading && availableDumps.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No SQL dumps found in exports/.</p>
+            ) : null}
+
+            {availableDumps.length > 0 ? (
+              <Select value={selectedDumpPath} onValueChange={setSelectedDumpPath}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a .sql dump file" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableDumps.map((filePath) => (
+                    <SelectItem key={filePath} value={filePath}>
+                      {filePath}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isRestoringDump}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                isRestoringDump ||
+                availableDumpsQuery.isLoading ||
+                !selectedDumpPath
+              }
+              onClick={() => {
+                restoreDumpMutation.mutate(selectedDumpPath)
+              }}
+            >
+              {isRestoringDump ? <Loader2 className="animate-spin" /> : null}
+              {isRestoringDump ? 'Restoring...' : 'Confirm Restore'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {schemaQuery.isLoading ? (
         <p className="text-sm text-muted-foreground">Introspecting database...</p>

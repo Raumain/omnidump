@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { mkdirSync } from 'node:fs'
 import type { DbCredentials } from '../../lib/db/connection'
 import type { SavedConnection } from '../../server/connection-fns'
 
@@ -75,7 +76,15 @@ export const Route = createFileRoute('/api/dump')({
 
         const credentials = toDbCredentials(connection)
         const db = getKyselyInstance(credentials)
-        const encoder = new TextEncoder()
+        const connectionName =
+          connection.name?.trim() || connection.database_name?.trim() || 'default'
+        const safeConnectionName = connectionName.replaceAll(/[\\/:*?"<>|]/g, '_')
+        const dirPath = `./exports/dumps/${safeConnectionName}/default`
+        const fileName = `dump_${Date.now()}.sql`
+        const fullPath = `${dirPath}/${fileName}`
+        mkdirSync(dirPath, { recursive: true })
+
+        const writer = Bun.file(fullPath).writer()
 
         let isDestroyed = false
         const destroyDb = async () => {
@@ -87,78 +96,118 @@ export const Route = createFileRoute('/api/dump')({
           await db.destroy()
         }
 
-        const stream = new ReadableStream<Uint8Array>({
-          async start(controller) {
-            try {
-              const tables = await db.introspection.getTables()
+        let writerClosed = false
+        const closeWriter = async () => {
+          if (writerClosed) {
+            return
+          }
 
-              for (const table of tables) {
-                const tableName = table.name
-                const escapedTableName = escapeIdentifier(tableName)
-                const columnNames = table.columns.map((column) => column.name)
+          writerClosed = true
+          await writer.end()
+        }
 
-                controller.enqueue(encoder.encode(`-- Table: ${tableName}\n`))
+        try {
+          if (credentials.driver === 'postgres') {
+            writer.write("SET session_replication_role = 'replica';\n\n")
+          }
 
-                if (columnNames.length === 0) {
-                  controller.enqueue(encoder.encode('\n'))
-                  continue
-                }
+          if (credentials.driver === 'mysql') {
+            writer.write('SET FOREIGN_KEY_CHECKS = 0;\n\n')
+          }
 
-                const escapedColumns = columnNames.map(escapeIdentifier).join(', ')
-                let offset = 0
+          if (credentials.driver === 'sqlite') {
+            writer.write('PRAGMA foreign_keys = OFF;\n\n')
+          }
 
-                while (true) {
-                  const rows = (await db
-                    .selectFrom(tableName as never)
-                    .selectAll()
-                    .limit(BATCH_SIZE)
-                    .offset(offset)
-                    .execute()) as Array<Record<string, unknown>>
+          const tables = await db.introspection.getTables()
 
-                  if (rows.length === 0) {
-                    break
-                  }
+          for (const table of tables) {
+            const tableName = table.name
+            const escapedTableName = escapeIdentifier(tableName)
+            const columnNames = table.columns.map((column) => column.name)
 
-                  const insertChunk = rows
-                    .map((row) => {
-                      const serializedValues = columnNames
-                        .map((columnName) => serializeValue(row[columnName]))
-                        .join(', ')
+            writer.write(`-- Table: ${tableName}\n`)
 
-                      return `INSERT INTO ${escapedTableName} (${escapedColumns}) VALUES (${serializedValues});\n`
-                    })
-                    .join('')
+            if (columnNames.length === 0) {
+              writer.write('\n')
+              continue
+            }
 
-                  controller.enqueue(encoder.encode(insertChunk))
+            const escapedColumns = columnNames.map(escapeIdentifier).join(', ')
+            let offset = 0
 
-                  if (rows.length < BATCH_SIZE) {
-                    break
-                  }
+            while (true) {
+              const rows = (await db
+                .selectFrom(tableName as never)
+                .selectAll()
+                .limit(BATCH_SIZE)
+                .offset(offset)
+                .execute()) as Array<Record<string, unknown>>
 
-                  offset += BATCH_SIZE
-                }
-
-                controller.enqueue(encoder.encode('\n'))
+              if (rows.length === 0) {
+                break
               }
 
-              controller.close()
-            } catch (error) {
-              controller.error(error)
-            } finally {
-              await destroyDb()
-            }
-          },
-          async cancel() {
-            await destroyDb()
-          },
-        })
+              const insertChunk = rows
+                .map((row) => {
+                  const serializedValues = columnNames
+                    .map((columnName) => serializeValue(row[columnName]))
+                    .join(', ')
 
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'application/sql',
-            'Content-Disposition': 'attachment; filename="omnidump-export.sql"',
-          },
-        })
+                  return `INSERT INTO ${escapedTableName} (${escapedColumns}) VALUES (${serializedValues});\n`
+                })
+                .join('')
+
+              writer.write(insertChunk)
+
+              if (rows.length < BATCH_SIZE) {
+                break
+              }
+
+              offset += BATCH_SIZE
+            }
+
+            writer.write('\n')
+          }
+
+          if (credentials.driver === 'postgres') {
+            writer.write("\nSET session_replication_role = 'origin';\n")
+          }
+
+          if (credentials.driver === 'mysql') {
+            writer.write('\nSET FOREIGN_KEY_CHECKS = 1;\n')
+          }
+
+          if (credentials.driver === 'sqlite') {
+            writer.write('\nPRAGMA foreign_keys = ON;\n')
+          }
+
+          await closeWriter()
+
+          return Response.json({
+            success: true,
+            message: 'Dump saved locally',
+            path: fullPath,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error'
+
+          return Response.json(
+            {
+              success: false,
+              error: message,
+            },
+            { status: 500 },
+          )
+        } finally {
+          try {
+            await closeWriter()
+          } catch {
+            // no-op
+          }
+
+          await destroyDb()
+        }
       },
     },
   },
