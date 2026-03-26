@@ -42,6 +42,7 @@ import type { DbCredentials } from '../lib/db/connection'
 import type { SavedConnection } from '../server/connection-fns'
 import {
   clearTableDataFn,
+  dropAllTablesFn,
   getAvailableDumpsFn,
   getDatabaseSchemaFn,
   restoreDumpFn,
@@ -231,6 +232,35 @@ function SchemaPage() {
     },
   })
 
+  const dropAllTablesMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
+      const credentials = getCredentialsFromConnection(activeConnection)
+
+      return dropAllTablesFn({ data: credentials })
+    },
+    onSuccess: async (result) => {
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success(result.message)
+      await queryClient.invalidateQueries({
+        queryKey: ['schema', activeConnection?.id],
+      })
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+
+      toast.error(message)
+      console.error('Failed to drop all tables:', message)
+    },
+  })
+
   const dumpMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch(
@@ -261,6 +291,7 @@ function SchemaPage() {
     ? clearTableMutation.variables
     : null
   const isWipingAllData = wipeAllDataMutation.isPending
+  const isDroppingAllTables = dropAllTablesMutation.isPending
   const isRestoringDump = restoreDumpMutation.isPending
   const isDumping = dumpMutation.isPending
   const availableDumps = availableDumpsQuery.data ?? []
@@ -293,7 +324,13 @@ function SchemaPage() {
             onClick={() => {
               dumpMutation.mutate()
             }}
-            disabled={isDumping || isWipingAllData || clearTableMutation.isPending || isRestoringDump}
+            disabled={
+              isDumping ||
+              isWipingAllData ||
+              isDroppingAllTables ||
+              clearTableMutation.isPending ||
+              isRestoringDump
+            }
           >
             {isDumping ? <Loader2 className="animate-spin" /> : <Download />}
             {isDumping ? 'Saving Dump...' : 'Download SQL Dump'}
@@ -301,7 +338,12 @@ function SchemaPage() {
           <Button
             type="button"
             variant="outline"
-            disabled={isWipingAllData || clearTableMutation.isPending || isRestoringDump}
+            disabled={
+              isWipingAllData ||
+              isDroppingAllTables ||
+              clearTableMutation.isPending ||
+              isRestoringDump
+            }
             onClick={() => {
               setIsRestoreModalOpen(true)
             }}
@@ -313,7 +355,11 @@ function SchemaPage() {
               <Button
                 type="button"
                 variant="destructive"
-                disabled={wipeAllDataMutation.isPending || clearTableMutation.isPending}
+                disabled={
+                  wipeAllDataMutation.isPending ||
+                  dropAllTablesMutation.isPending ||
+                  clearTableMutation.isPending
+                }
               >
                 {isWipingAllData ? 'Wiping...' : 'Wipe All Data'}
               </Button>
@@ -334,6 +380,41 @@ function SchemaPage() {
                   }}
                 >
                   {isWipingAllData ? 'Wiping...' : 'Continue'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={
+                  dropAllTablesMutation.isPending ||
+                  wipeAllDataMutation.isPending ||
+                  clearTableMutation.isPending ||
+                  isRestoringDump
+                }
+              >
+                {isDroppingAllTables ? 'Dropping...' : 'Drop All Tables'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Drop all tables?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  DANGER: This will completely DESTROY ALL TABLES and their data. Your database schema will be wiped clean. You will need to rerun your ORM migrations to rebuild the structure. This is completely irreversible.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => {
+                    dropAllTablesMutation.mutate()
+                  }}
+                >
+                  {isDroppingAllTables ? 'Dropping...' : 'Continue'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -429,6 +510,10 @@ function SchemaPage() {
         <p className="text-sm text-muted-foreground">Wiping data from all tables...</p>
       ) : null}
 
+      {isDroppingAllTables ? (
+        <p className="text-sm text-muted-foreground">Dropping all tables...</p>
+      ) : null}
+
       {schemaError ? (
         <Card>
           <CardContent className="pt-6 text-sm text-destructive">{schemaError}</CardContent>
@@ -447,7 +532,7 @@ function SchemaPage() {
                       type="button"
                       variant="destructive"
                       size="sm"
-                      disabled={clearTableMutation.isPending}
+                      disabled={clearTableMutation.isPending || isDroppingAllTables}
                     >
                       {clearingTableName === table.tableName ? 'Clearing...' : 'Clear Data'}
                     </Button>

@@ -5,10 +5,7 @@ import {
   type DbCredentials,
 } from "../lib/db/connection";
 import { db } from "./internal-db";
-
-type TestDatabaseConnectionResult =
-  | { success: true; message: string }
-  | { success: false; error: string };
+import { type MessageServerFnResult } from "./result-types";
 
 type SaveConnectionInput = DbCredentials & {
   name: string;
@@ -44,7 +41,7 @@ type DeleteConnectionResult =
 
 export const testDatabaseConnection = createServerFn({ method: "POST" })
   .inputValidator((credentials: DbCredentials) => credentials)
-  .handler(async ({ data: credentials }): Promise<TestDatabaseConnectionResult> => {
+  .handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
     let db: ReturnType<typeof createConnection> | undefined;
 
     try {

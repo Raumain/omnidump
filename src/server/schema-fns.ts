@@ -6,6 +6,7 @@ import {
   type DbCredentials,
   getKyselyInstance,
 } from "../lib/db/connection";
+import { type MessageServerFnResult } from "./result-types";
 
 type ActiveConnectionInput =
   | DbCredentials
@@ -33,14 +34,6 @@ type ClearTableDataInput = {
   credentials: DbCredentials;
   tableName: string;
 };
-
-type ClearTableDataResult =
-  | { success: true; message: string }
-  | { success: false; error: string };
-
-type WipeAllDataResult =
-  | { success: true; message: string }
-  | { success: false; error: string };
 
 type RestoreDumpInput = {
   credentials: DbCredentials;
@@ -194,7 +187,7 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
 
 export const clearTableDataFn = createServerFn({ method: "POST" })
   .inputValidator((input: ClearTableDataInput) => input)
-  .handler(async ({ data: input }): Promise<ClearTableDataResult> => {
+  .handler(async ({ data: input }): Promise<MessageServerFnResult> => {
     const db = getKyselyInstance(input.credentials);
 
     try {
@@ -218,7 +211,7 @@ export const clearTableDataFn = createServerFn({ method: "POST" })
 
 export const wipeAllDataFn = createServerFn({ method: "POST" })
   .inputValidator((credentials: DbCredentials) => credentials)
-  .handler(async ({ data: credentials }): Promise<WipeAllDataResult> => {
+  .handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
     const db = getKyselyInstance(credentials);
     let fkChecksDisabled = false;
 
@@ -288,6 +281,77 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
     } finally {
       try {
         await restoreForeignKeyChecks();
+      } catch (error) {
+        console.error("Failed to restore foreign key checks:", error);
+      }
+
+      await db.destroy();
+    }
+  });
+
+export const dropAllTablesFn = createServerFn({ method: "POST" })
+  .inputValidator((credentials: DbCredentials) => credentials)
+  .handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
+    const db = getKyselyInstance(credentials);
+    let mysqlForeignKeyChecksDisabled = false;
+    let sqliteForeignKeysDisabled = false;
+
+    try {
+      const tables = await db.introspection.getTables();
+
+      if (tables.length === 0) {
+        return {
+          success: true,
+          message: "Database is already empty.",
+        };
+      }
+
+      const { driver } = credentials;
+
+      if (driver === "postgres") {
+        for (const table of tables) {
+          await sql.raw(`DROP TABLE "${table.name}" CASCADE`).execute(db);
+        }
+      }
+
+      if (driver === "mysql") {
+        await sql.raw("SET FOREIGN_KEY_CHECKS = 0;").execute(db);
+        mysqlForeignKeyChecksDisabled = true;
+
+        for (const table of tables) {
+          await sql.raw(`DROP TABLE \`${table.name}\``).execute(db);
+        }
+      }
+
+      if (driver === "sqlite") {
+        await sql.raw("PRAGMA foreign_keys = OFF;").execute(db);
+        sqliteForeignKeysDisabled = true;
+
+        for (const table of tables) {
+          await sql.raw(`DROP TABLE "${table.name}"`).execute(db);
+        }
+      }
+
+      return {
+        success: true,
+        message: "All tables dropped.",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+
+      return {
+        success: false,
+        error: message,
+      };
+    } finally {
+      try {
+        if (mysqlForeignKeyChecksDisabled) {
+          await sql.raw("SET FOREIGN_KEY_CHECKS = 1;").execute(db);
+        }
+
+        if (sqliteForeignKeysDisabled) {
+          await sql.raw("PRAGMA foreign_keys = ON;").execute(db);
+        }
       } catch (error) {
         console.error("Failed to restore foreign key checks:", error);
       }
