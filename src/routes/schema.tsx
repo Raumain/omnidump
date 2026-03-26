@@ -22,7 +22,11 @@ import {
 } from '../components/ui/card'
 import type { DbCredentials } from '../lib/db/connection'
 import type { SavedConnection } from '../server/connection-fns'
-import { clearTableDataFn, getDatabaseSchemaFn } from '../server/schema-fns'
+import {
+  clearTableDataFn,
+  getDatabaseSchemaFn,
+  wipeAllDataFn,
+} from '../server/schema-fns'
 
 export const Route = createFileRoute('/schema')({ component: SchemaPage })
 
@@ -132,9 +136,40 @@ function SchemaPage() {
     },
   })
 
+  const wipeAllDataMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
+      const credentials = getCredentialsFromConnection(activeConnection)
+
+      return wipeAllDataFn({ data: credentials })
+    },
+    onSuccess: async (result) => {
+      if (result.success) {
+        alert(result.message)
+        await queryClient.invalidateQueries({
+          queryKey: ['schema', activeConnection?.id],
+        })
+        return
+      }
+
+      alert(result.error)
+      console.error('Failed to wipe all data:', result.error)
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+
+      alert(message)
+      console.error('Failed to wipe all data:', message)
+    },
+  })
+
   const clearingTableName = clearTableMutation.isPending
     ? clearTableMutation.variables
     : null
+  const isWipingAllData = wipeAllDataMutation.isPending
 
   const handleDownloadDump = () => {
     const url = `/api/dump?connectionId=${activeConnection.id}`
@@ -153,6 +188,36 @@ function SchemaPage() {
             <Download />
             Download SQL Dump
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={wipeAllDataMutation.isPending || clearTableMutation.isPending}
+              >
+                {isWipingAllData ? 'Wiping...' : 'Wipe All Data'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Wipe all data?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  WARNING: This will delete ALL data across ALL tables in this database. The schema will remain intact. This action is irreversible.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => {
+                    wipeAllDataMutation.mutate()
+                  }}
+                >
+                  {isWipingAllData ? 'Wiping...' : 'Continue'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button variant="outline" asChild>
             <Link to="/import">Import CSV</Link>
           </Button>
@@ -170,6 +235,10 @@ function SchemaPage() {
         <p className="text-sm text-muted-foreground">
           Clearing data from {clearingTableName}...
         </p>
+      ) : null}
+
+      {isWipingAllData ? (
+        <p className="text-sm text-muted-foreground">Wiping data from all tables...</p>
       ) : null}
 
       {schemaError ? (

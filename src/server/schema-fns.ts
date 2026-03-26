@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { sql } from "kysely";
 
 import {
   type DbCredentials,
@@ -33,6 +34,10 @@ type ClearTableDataInput = {
 };
 
 type ClearTableDataResult =
+  | { success: true; message: string }
+  | { success: false; error: string };
+
+type WipeAllDataResult =
   | { success: true; message: string }
   | { success: false; error: string };
 
@@ -113,6 +118,86 @@ export const clearTableDataFn = createServerFn({ method: "POST" })
         error: message,
       };
     } finally {
+      await db.destroy();
+    }
+  });
+
+export const wipeAllDataFn = createServerFn({ method: "POST" })
+  .inputValidator((credentials: DbCredentials) => credentials)
+  .handler(async ({ data: credentials }): Promise<WipeAllDataResult> => {
+    const db = getKyselyInstance(credentials);
+    let fkChecksDisabled = false;
+
+    const disableForeignKeyChecks = async () => {
+      if (credentials.driver === "postgres") {
+        await sql`SET session_replication_role = 'replica';`.execute(db);
+      }
+
+      if (credentials.driver === "mysql") {
+        await sql`SET FOREIGN_KEY_CHECKS = 0;`.execute(db);
+      }
+
+      if (credentials.driver === "sqlite") {
+        await sql`PRAGMA foreign_keys = OFF;`.execute(db);
+      }
+
+      fkChecksDisabled = true;
+    };
+
+    const restoreForeignKeyChecks = async () => {
+      if (!fkChecksDisabled) {
+        return;
+      }
+
+      if (credentials.driver === "postgres") {
+        await sql`SET session_replication_role = 'origin';`.execute(db);
+      }
+
+      if (credentials.driver === "mysql") {
+        await sql`SET FOREIGN_KEY_CHECKS = 1;`.execute(db);
+      }
+
+      if (credentials.driver === "sqlite") {
+        await sql`PRAGMA foreign_keys = ON;`.execute(db);
+      }
+    };
+
+    try {
+      const tables = await db.introspection.getTables();
+      const tableNames = tables
+        .map((table) => table.name)
+        .filter((tableName) => {
+          if (credentials.driver !== "sqlite") {
+            return true;
+          }
+
+          return tableName !== "sqlite_sequence";
+        });
+
+      await disableForeignKeyChecks();
+
+      for (const tableName of tableNames) {
+        await db.deleteFrom(tableName).execute();
+      }
+
+      return {
+        success: true,
+        message: "All data wiped successfully.",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+
+      return {
+        success: false,
+        error: message,
+      };
+    } finally {
+      try {
+        await restoreForeignKeyChecks();
+      } catch (error) {
+        console.error("Failed to restore foreign key checks:", error);
+      }
+
       await db.destroy();
     }
   });
