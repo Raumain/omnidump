@@ -1,6 +1,6 @@
 services:
   app:
-    image: oven/bun:latest
+    build: .
     container_name: omnidump
     user: bun
     command: tail -f /dev/null

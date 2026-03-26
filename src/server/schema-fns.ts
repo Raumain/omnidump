@@ -1,5 +1,4 @@
 import { Glob } from "bun";
-import { resolve } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "kysely";
 
@@ -85,23 +84,6 @@ const normalizeCredentials = (input: ActiveConnectionInput): DbCredentials => {
   };
 };
 
-const resolveDumpPath = (filePath: string): string | null => {
-  const normalizedPath = filePath.trim().replaceAll("\\", "/");
-
-  if (!normalizedPath || !normalizedPath.endsWith(".sql")) {
-    return null;
-  }
-
-  const exportsRoot = resolve(DUMPS_DIRECTORY);
-  const fullPath = resolve(exportsRoot, normalizedPath);
-
-  if (fullPath !== exportsRoot && !fullPath.startsWith(`${exportsRoot}/`)) {
-    return null;
-  }
-
-  return fullPath;
-};
-
 export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
   async (): Promise<string[]> => {
     try {
@@ -117,21 +99,61 @@ export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
 export const restoreDumpFn = createServerFn({ method: "POST" })
   .inputValidator((input: RestoreDumpInput) => input)
   .handler(async ({ data: input }): Promise<RestoreDumpResult> => {
-    const fullPath = resolveDumpPath(input.filePath);
-
-    if (!fullPath) {
-      return {
-        success: false,
-        error: "Invalid dump file path.",
-      };
-    }
-
-    const db = getKyselyInstance(input.credentials);
+    const fullPath = `./exports/dumps/${input.filePath}`;
 
     try {
-      const sqlContent = await Bun.file(fullPath).text();
+      const credentials = input.credentials;
+      let proc: Bun.Subprocess;
 
-      await sql.raw(sqlContent).execute(db);
+      if (credentials.driver === "postgres") {
+        const commandArgs = [
+          "psql",
+          `postgresql://${credentials.user}:${credentials.password}@${credentials.host}:${credentials.port}/${credentials.database}`,
+          "-f",
+          fullPath,
+        ];
+
+        proc = Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
+      } else if (credentials.driver === "mysql") {
+        const commandArgs = [
+          "mysql",
+          "-h",
+          credentials.host ?? "",
+          "-P",
+          (credentials.port ?? 0).toString(),
+          "-u",
+          credentials.user ?? "",
+          `-p${credentials.password ?? ""}`,
+          credentials.database ?? "",
+        ];
+
+        const file = Bun.file(fullPath);
+
+        proc = Bun.spawn(commandArgs, {
+          stdin: file,
+          stdout: "ignore",
+          stderr: "pipe",
+        });
+      } else {
+        const commandArgs = [
+          "sqlite3",
+          credentials.database ?? "",
+          `.read ${fullPath}`,
+        ];
+
+        proc = Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
+      }
+
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        const errorText =
+          proc.stderr && typeof proc.stderr !== "number"
+            ? await new Response(proc.stderr).text()
+            : "Unknown error";
+
+        throw new Error(errorText);
+      }
 
       return { success: true };
     } catch (error) {
@@ -141,8 +163,6 @@ export const restoreDumpFn = createServerFn({ method: "POST" })
         success: false,
         error: message,
       };
-    } finally {
-      await db.destroy();
     }
   });
 
