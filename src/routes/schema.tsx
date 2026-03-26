@@ -74,6 +74,7 @@ function SchemaPage() {
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false)
   const [selectedDumpPath, setSelectedDumpPath] = useState('')
   const [dumpType, setDumpType] = useState<'schema' | 'data' | 'both'>('both')
+  const [schemaExportFormat, setSchemaExportFormat] = useState<'json' | 'dbml'>('json')
 
   const activeConnectionQuery = useQuery({
     queryKey: ['active-connection'],
@@ -304,6 +305,36 @@ function SchemaPage() {
           <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select
+            value={schemaExportFormat}
+            onValueChange={(value) => {
+              setSchemaExportFormat(value as 'json' | 'dbml')
+            }}
+          >
+            <SelectTrigger className="w-[190px]">
+              <SelectValue placeholder="Select export format" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="json">Export as JSON</SelectItem>
+              <SelectItem value="dbml">Export as DBML</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              window.location.href = `/api/export-schema?connectionId=${activeConnection.id}&format=${schemaExportFormat}`
+            }}
+            disabled={
+              isDumping ||
+              isWipingAllData ||
+              isDroppingAllTables ||
+              clearTableMutation.isPending ||
+              isRestoringDump
+            }
+          >
+            Export Schema
+          </Button>
           <Select
             value={dumpType}
             onValueChange={(value) => {
