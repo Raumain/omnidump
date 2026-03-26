@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type SubmitEvent } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 
 import { Button } from '../components/ui/button'
 import {
@@ -28,11 +28,13 @@ import {
   type SavedConnection,
   testDatabaseConnection,
 } from '../server/connection-fns'
+import { useActiveConnection } from '../hooks/use-active-connection.tsx'
 
 export const Route = createFileRoute('/')({ component: App })
 
 function App() {
   const queryClient = useQueryClient()
+  const { activeConnection, setActiveConnection } = useActiveConnection()
   const [connectionName, setConnectionName] = useState('')
   const [credentials, setCredentials] = useState<DbCredentials>({
     driver: 'postgres',
@@ -71,10 +73,6 @@ function App() {
 
   const savedConnections: SavedConnection[] =
     savedConnectionsQuery.data?.success ? savedConnectionsQuery.data.connections : []
-  const activeConnection = queryClient.getQueryData<SavedConnection>([
-    'active-connection',
-  ])
-
   const handleSelectConnection = (connection: SavedConnection) => {
     const driver = connection.driver
     const normalizedDriver: DbCredentials['driver'] =
@@ -82,7 +80,7 @@ function App() {
         ? driver
         : 'postgres'
 
-    queryClient.setQueryData(['active-connection'], connection)
+    setActiveConnection(connection)
 
     setConnectionName(connection.name)
     setCredentials({
@@ -101,6 +99,10 @@ function App() {
       {
         onSuccess: (response) => {
           if (response.success) {
+            if (activeConnection?.id === id) {
+              setActiveConnection(null)
+            }
+
             setStatus({ success: true, message: 'Connection deleted.' })
             return
           }
@@ -156,50 +158,58 @@ function App() {
   }
 
   return (
-    <main className="flex min-h-screen bg-muted/40">
-      <aside className="min-h-screen min-w-[300px] border-r bg-muted/20 p-4">
-        <h2 className="text-lg font-semibold">Saved Connections</h2>
-        <div className="mt-4 space-y-2">
-          {savedConnectionsQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading connections...</p>
-          ) : null}
-          {savedConnections.map((connection) => (
-            <button
-              type="button"
-              key={connection.id}
-              className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50"
-              onClick={() => {
-                handleSelectConnection(connection)
-              }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">{connection.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {connection.driver ?? 'unknown'}
-                  </p>
+    <section className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Saved Connections</CardTitle>
+          <CardDescription>Select one to make it active.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {savedConnectionsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading connections...</p>
+            ) : null}
+            {savedConnections.map((connection) => (
+              <button
+                type="button"
+                key={connection.id}
+                className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
+                  activeConnection?.id === connection.id
+                    ? 'border-border bg-muted/60'
+                    : 'bg-background hover:bg-muted/50'
+                }`}
+                onClick={() => {
+                  handleSelectConnection(connection)
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{connection.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {connection.driver ?? 'unknown'}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Delete ${connection.name}`}
+                    disabled={deleteConnectionMutation.isPending}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void handleDeleteConnection(connection.id)
+                    }}
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Delete ${connection.name}`}
-                  disabled={deleteConnectionMutation.isPending}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleDeleteConnection(connection.id)
-                  }}
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-            </button>
-          ))}
-        </div>
-      </aside>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-      <section className="flex flex-1 items-center justify-center p-4">
-        <Card className="w-full max-w-xl">
+      <Card className="w-full max-w-xl">
           <CardHeader>
             <CardTitle>Database Connection</CardTitle>
             <CardDescription>
@@ -322,11 +332,6 @@ function App() {
               </FormItem>
 
               <div className="flex gap-2">
-                {activeConnection ? (
-                  <Button type="button" variant="outline" asChild className="flex-1">
-                    <Link to="/schema">Explore Schema</Link>
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   variant="secondary"
@@ -361,8 +366,7 @@ function App() {
               ) : null}
             </Form>
           </CardContent>
-        </Card>
-      </section>
-    </main>
+      </Card>
+    </section>
   )
 }

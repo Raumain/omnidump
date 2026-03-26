@@ -3,6 +3,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { Download, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useActiveConnection } from '../hooks/use-active-connection.tsx'
 
 import {
   AlertDialog,
@@ -76,19 +77,7 @@ function SchemaPage() {
   const [dumpType, setDumpType] = useState<'schema' | 'data' | 'both'>('both')
   const [schemaExportFormat, setSchemaExportFormat] = useState<'json' | 'dbml'>('json')
 
-  const activeConnectionQuery = useQuery({
-    queryKey: ['active-connection'],
-    queryFn: async () => {
-      const cached = queryClient.getQueryData<SavedConnection>([
-        'active-connection',
-      ])
-
-      return cached ?? null
-    },
-    staleTime: Number.POSITIVE_INFINITY,
-  })
-
-  const activeConnection = activeConnectionQuery.data
+  const { activeConnection } = useActiveConnection()
 
   const schemaQuery = useQuery({
     queryKey: ['schema', activeConnection?.id],
@@ -107,26 +96,6 @@ function SchemaPage() {
     queryFn: async () => getAvailableDumpsFn(),
     enabled: isRestoreModalOpen,
   })
-
-  if (!activeConnection) {
-    return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>No active connection selected.</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Select a saved connection to explore its schema.
-            </p>
-            <Button asChild>
-              <Link to="/">Back</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
-    )
-  }
 
   const schemaData = schemaQuery.data
   const schemaError = schemaData && 'error' in schemaData ? schemaData.error : null
@@ -264,6 +233,10 @@ function SchemaPage() {
 
   const dumpMutation = useMutation({
     mutationFn: async () => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
       const response = await fetch(
         `/api/dump?connectionId=${activeConnection.id}&dumpType=${dumpType}`,
       )
@@ -296,6 +269,26 @@ function SchemaPage() {
   const isRestoringDump = restoreDumpMutation.isPending
   const isDumping = dumpMutation.isPending
   const availableDumps = availableDumpsQuery.data ?? []
+
+  if (!activeConnection) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>No active connection selected.</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Select a saved connection to explore its schema.
+            </p>
+            <Button asChild>
+              <Link to="/">Back</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select'
-import type { SavedConnection } from '../server/connection-fns'
+import { useActiveConnection } from '../hooks/use-active-connection.tsx'
 import { getDatabaseSchemaFn } from '../server/schema-fns'
 
 export const Route = createFileRoute('/import')({ component: ImportPage })
@@ -21,7 +21,6 @@ const normalizeColumnName = (name: string) =>
   name.toLowerCase().replace(/[\s_-]/g, '')
 
 function ImportPage() {
-  const queryClient = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [selectedTable, setSelectedTable] = useState('')
@@ -30,20 +29,7 @@ function ImportPage() {
   const [failedCount, setFailedCount] = useState(0)
   const [rejectFileName, setRejectFileName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const activeConnectionQuery = useQuery({
-    queryKey: ['active-connection'],
-    queryFn: async () => {
-      const cached = queryClient.getQueryData<SavedConnection>([
-        'active-connection',
-      ])
-
-      return cached ?? null
-    },
-    staleTime: Number.POSITIVE_INFINITY,
-  })
-
-  const activeConnection = activeConnectionQuery.data
+  const { activeConnection } = useActiveConnection()
 
   const schemaQuery = useQuery({
     queryKey: ['schema', activeConnection?.id],
@@ -56,26 +42,6 @@ function ImportPage() {
     },
     enabled: !!activeConnection,
   })
-
-  if (!activeConnection) {
-    return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>No active connection selected.</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Select a saved connection to start CSV import mapping.
-            </p>
-            <Button asChild>
-              <Link to="/">Back</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
-    )
-  }
 
   const schemaData = schemaQuery.data
   const schemaError = schemaData && 'error' in schemaData ? schemaData.error : null
@@ -281,6 +247,26 @@ function ImportPage() {
       tableName: selectedTable,
       mapping,
     })
+  }
+
+  if (!activeConnection) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>No active connection selected.</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Select a saved connection to start CSV import mapping.
+            </p>
+            <Button asChild>
+              <Link to="/">Back</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
 
   return (
