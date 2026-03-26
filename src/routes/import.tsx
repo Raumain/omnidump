@@ -1,7 +1,17 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Zap } from 'lucide-react'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -28,6 +38,7 @@ function ImportPage() {
   const [successfulCount, setSuccessfulCount] = useState(0)
   const [failedCount, setFailedCount] = useState(0)
   const [rejectFileName, setRejectFileName] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { activeConnection } = useActiveConnection()
 
@@ -145,7 +156,7 @@ function ImportPage() {
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : 'Import failed.'
-      alert(message)
+      setErrorMessage(message)
     },
   })
 
@@ -251,16 +262,16 @@ function ImportPage() {
 
   if (!activeConnection) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-6 md:p-10 font-mono">
+        <Card className="w-full max-w-md bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
           <CardHeader>
-            <CardTitle>No active connection selected.</CardTitle>
+            <CardTitle className="text-2xl font-black uppercase tracking-wider">No active connection.</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Select a saved connection to start CSV import mapping.
+          <CardContent className="flex items-center justify-between gap-3 pt-6">
+            <p className="text-sm font-bold uppercase text-muted-foreground">
+              Select a saved connection to start.
             </p>
-            <Button asChild>
+            <Button asChild className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200">
               <Link to="/">Back</Link>
             </Button>
           </CardContent>
@@ -270,91 +281,104 @@ function ImportPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">
-      <div>
-        <h1 className="text-xl font-semibold">CSV Import & Mapping</h1>
-        <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 p-6 md:p-10 font-mono">
+      <div className="flex flex-col gap-2 bg-zinc-950 p-6 border-2 border-black dark:border-white shadow-hardware dark:shadow-hardware-dark">
+        <h1 className="text-3xl font-black uppercase tracking-wider text-white">DATA_INJECTION_MODULE</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+          <p className="text-sm font-bold uppercase tracking-widest text-emerald-500">STATUS: READY</p>
+          <span className="text-zinc-600">|</span>
+          <p className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{activeConnection.name}</p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">1. Select CSV File</CardTitle>
+      <Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
+        <CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
+          <CardTitle className="text-xl font-black uppercase tracking-wider">1. INSERT CSV MEDIUM</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFileChange}
-          />
+        <CardContent className="p-0">
+          <div className="border-4 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 p-8 text-center relative hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <Input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <p className="text-lg font-black uppercase tracking-widest text-zinc-500 pointer-events-none">
+              {file ? file.name : 'CLICK OR DRAG MEDIA HERE'}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">2. Select Target Table</CardTitle>
+      <Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
+        <CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
+          <CardTitle className="text-xl font-black uppercase tracking-wider">2. TARGET TABLE</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="p-0 space-y-3">
           {schemaQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading schema...</p>
+            <p className="text-sm font-bold uppercase animate-pulse">Scanning structures...</p>
           ) : null}
 
           {schemaError ? (
-            <p className="text-sm text-destructive">{schemaError}</p>
+            <p className="text-sm font-bold uppercase text-red-500">{schemaError}</p>
           ) : null}
 
           {!schemaQuery.isLoading && !schemaError ? (
-            <Select
-              value={selectedTable}
-              onValueChange={(value) => {
-                setSelectedTable(value)
-                setMapping({})
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a table" />
-              </SelectTrigger>
-              <SelectContent>
-                {tables.map((table) => (
-                  <SelectItem key={table.tableName} value={table.tableName}>
-                    {table.tableName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="border-2 border-black p-2 bg-zinc-100 shadow-inner">
+              <Select
+                value={selectedTable}
+                onValueChange={(value) => {
+                  setSelectedTable(value)
+                  setMapping({})
+                }}
+              >
+                <SelectTrigger className="w-full rounded-none border-2 border-black bg-white shadow-hardware text-black font-bold uppercase h-12 text-lg">
+                  <SelectValue placeholder="Select a table" />
+                </SelectTrigger>
+                <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+                  {tables.map((table) => (
+                    <SelectItem key={table.tableName} value={table.tableName} className="rounded-none cursor-pointer focus:bg-zinc-200  hover:!bg-zinc-400 bg-white text-black font-bold uppercase">
+                      {table.tableName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           ) : null}
         </CardContent>
       </Card>
 
       {file && selectedTable ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">3. Map CSV Headers to Columns</CardTitle>
+        <Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
+          <CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
+            <CardTitle className="text-xl font-black uppercase tracking-wider">3. DATA MAPPING</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 border-b pb-2 text-sm font-medium">
-              <span>CSV Header</span>
-              <span>DB Column</span>
+          <CardContent className="p-0">
+            <div className="grid grid-cols-2 gap-4 border-b-4 border-black pb-4 text-sm font-black uppercase tracking-widest text-zinc-500">
+              <span>CSV HEADER</span>
+              <span>DB COLUMN</span>
             </div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-4">
               {csvHeaders.map((header) => (
                 <div
                   key={header}
-                  className="grid grid-cols-1 gap-2 rounded-md border p-2 sm:grid-cols-2"
+                  className="grid grid-cols-1 gap-4 bg-zinc-50 dark:bg-zinc-950 border-2 border-black p-4 sm:grid-cols-2 items-center"
                 >
-                  <p className="truncate text-sm">{header}</p>
+                  <p className="truncate text-base font-bold bg-white dark:bg-black px-3 py-2 border-2 border-black shadow-hardware translate-x-[-4px] translate-y-[-4px]">{header}</p>
                   <Select
                     value={mapping[header]}
                     onValueChange={(value) => {
                       setMapping((prev) => ({ ...prev, [header]: value }))
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full rounded-none border-2 border-black bg-white shadow-hardware font-bold h-10">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
                       {selectedTableColumns.map((column) => (
-                        <SelectItem key={column.name} value={column.name}>
+                        <SelectItem key={column.name} value={column.name} className="rounded-none cursor-pointer focus:bg-zinc-200 font-bold uppercase">
                           {column.name}
                         </SelectItem>
                       ))}
@@ -364,8 +388,8 @@ function ImportPage() {
               ))}
 
               {csvHeaders.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No CSV headers found in the first line of the file.
+                <p className="text-sm font-bold uppercase text-red-500">
+                  No CSV headers detected.
                 </p>
               ) : null}
             </div>
@@ -374,30 +398,45 @@ function ImportPage() {
       ) : null}
 
       {importMutation.isPending || importMutation.isSuccess || importMutation.isError ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Import Progress</CardTitle>
+        <Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
+          <CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
+            <CardTitle className="text-xl font-black uppercase tracking-wider">INJECTION PROGRESS</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p>Rows Inserted: {successfulCount}</p>
-            <p className="text-destructive">Rows Failed: {failedCount}</p>
+          <CardContent className="p-0 space-y-6">
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between font-black uppercase tracking-widest text-sm">
+                <span>Inserted</span>
+                <span className="text-emerald-500">{successfulCount}</span>
+              </div>
+              <div className="flex justify-between font-black uppercase tracking-widest text-sm">
+                <span>Failed</span>
+                <span className="text-red-500">{failedCount}</span>
+              </div>
+              <div className="w-full h-8 bg-zinc-200 border-2 border-black mt-2 relative overflow-hidden">
+                {/* Physical LED Ladder representation */}
+                <div 
+                  className="h-full bg-emerald-500 transition-all duration-300 pattern-vertical-lines"
+                  style={{ width: successfulCount + failedCount > 0 ? `${(successfulCount / (successfulCount + failedCount)) * 100}%` : '0%', backgroundImage: 'linear-gradient(90deg, transparent 50%, rgba(0,0,0,0.5) 50%)', backgroundSize: '10px 100%' }}
+                />
+              </div>
+            </div>
 
             {importMutation.isSuccess ? (
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="font-medium">Done</p>
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-4 border-t-2 border-dashed border-zinc-400 pt-4">
+                <p className="font-black uppercase tracking-widest text-lg">PROCESS COMPLETE</p>
+                <div className="flex flex-wrap items-center gap-4">
                   {failedCount > 0 && rejectFileName ? (
-                    <Button variant="destructive" asChild>
+                    <Button className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700" asChild>
                       <a
                         href={`/api/download-reject?fileName=${encodeURIComponent(rejectFileName)}`}
                       >
-                        Download Failed Rows (CSV)
+                        Download Rejects
                       </a>
                     </Button>
                   ) : null}
 
-                  <Button type="button" onClick={resetForm}>
-                    Reset Form
+                  <Button type="button" onClick={resetForm} className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200">
+                    Reset Module
                   </Button>
                 </div>
               </div>
@@ -406,16 +445,43 @@ function ImportPage() {
         </Card>
       ) : null}
 
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <Button variant="outline" asChild>
-          <Link to="/">Back</Link>
+      <div className="mt-8 flex items-center justify-between gap-4 py-4">
+        <Button asChild className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200 h-14 px-8 text-lg">
+          <Link to="/">ABORT</Link>
         </Button>
         {!importMutation.isPending ? (
-          <Button type="button" onClick={handleImport} disabled={!canImport}>
-            Start Import
+          <Button 
+            type="button" 
+            onClick={handleImport} 
+            disabled={!canImport}
+            className="flex-1 rounded-none border-4 border-black shadow-hardware active:translate-x-[4px] active:translate-y-[4px] active:shadow-none font-black uppercase bg-orange-500 text-black hover:bg-orange-400 h-20 text-2xl tracking-widest disabled:opacity-50 disabled:active:translate-x-0 disabled:active:translate-y-0 disabled:active:shadow-hardware flex items-center justify-center gap-3"
+          >
+            <Zap className="w-8 h-8" />
+            INITIATE INJECTION
           </Button>
         ) : null}
       </div>
+
+      <AlertDialog open={!!errorMessage} onOpenChange={(open) => { if (!open) setErrorMessage(null) }}>
+        <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-6 h-6" /> INJECTION ERROR
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-foreground font-bold uppercase tracking-widest mt-4">
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-6">
+            <AlertDialogAction
+              onClick={() => setErrorMessage(null)}
+              className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 w-full sm:w-auto"
+            >
+              ACKNOWLEDGE
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   )
 }

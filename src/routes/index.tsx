@@ -1,16 +1,20 @@
-import { Trash2 } from 'lucide-react'
+import { Trash2, Plus, Zap, Save, RefreshCw } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type SubmitEvent } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 
-import { Button } from '../components/ui/button'
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../components/ui/card'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../components/ui/alert-dialog'
+import { Button } from '../components/ui/button'
 import { Form, FormControl, FormItem, FormLabel } from '../components/ui/form'
 import { Input } from '../components/ui/input'
 import {
@@ -29,6 +33,7 @@ import {
   testDatabaseConnection,
 } from '../server/connection-fns'
 import { useActiveConnection } from '../hooks/use-active-connection.tsx'
+import { savedConnectionsQueryKey } from '../lib/query-keys.ts'
 
 export const Route = createFileRoute('/')({ component: App })
 
@@ -49,21 +54,21 @@ function App() {
   )
 
   const savedConnectionsQuery = useQuery({
-    queryKey: ['saved-connections'],
+    queryKey: savedConnectionsQueryKey,
     queryFn: () => getSavedConnectionsFn(),
   })
 
   const saveConnectionMutation = useMutation({
     mutationFn: saveConnectionFn,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['saved-connections'] })
+      await queryClient.invalidateQueries({ queryKey: savedConnectionsQueryKey })
     },
   })
 
   const deleteConnectionMutation = useMutation({
     mutationFn: deleteConnectionFn,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['saved-connections'] })
+      await queryClient.invalidateQueries({ queryKey: savedConnectionsQueryKey })
     },
   })
 
@@ -158,82 +163,148 @@ function App() {
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Saved Connections</CardTitle>
-          <CardDescription>Select one to make it active.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {savedConnectionsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading connections...</p>
-            ) : null}
-            {savedConnections.map((connection) => (
-              <button
-                type="button"
-                key={connection.id}
-                className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
-                  activeConnection?.id === connection.id
-                    ? 'border-border bg-muted/60'
-                    : 'bg-background hover:bg-muted/50'
-                }`}
-                onClick={() => {
-                  handleSelectConnection(connection)
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{connection.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {connection.driver ?? 'unknown'}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Delete ${connection.name}`}
-                    disabled={deleteConnectionMutation.isPending}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void handleDeleteConnection(connection.id)
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              </button>
-            ))}
+    <section className="mx-auto flex w-full max-w-6xl flex-col gap-6 font-mono pb-12">
+      <div className="border-b-4 border-black dark:border-white pb-4 mb-8">
+        <h1 className="text-3xl font-black uppercase tracking-widest text-foreground">SYSTEM_PATCHBAY</h1>
+        <p className="text-sm font-bold uppercase tracking-widest text-zinc-500 mt-2">Global Routing & Connection Matrix</p>
+      </div>
+
+      <div className="w-full">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-black uppercase tracking-widest">Active Nodes ({savedConnections.length})</h2>
+        </div>
+
+        {savedConnectionsQuery.isLoading ? (
+          <div className="flex justify-center p-12 border-2 border-dashed border-zinc-400 bg-zinc-50 dark:bg-zinc-900">
+            <p className="text-sm font-bold uppercase animate-pulse tracking-widest">Scanning network...</p>
           </div>
-        </CardContent>
-      </Card>
+        ) : null}
 
-      <Card className="w-full max-w-xl">
-          <CardHeader>
-            <CardTitle>Database Connection</CardTitle>
-            <CardDescription>
-              Enter credentials and run a quick connection test.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Form onSubmit={handleSubmit}>
-              <FormItem>
-                <FormLabel>Connection Alias</FormLabel>
-                <FormControl>
-                  <Input
-                    type="text"
-                    value={connectionName}
-                    onChange={(event) => {
-                      setConnectionName(event.target.value)
-                    }}
-                  />
-                </FormControl>
-              </FormItem>
+        {!savedConnectionsQuery.isLoading && savedConnections.length === 0 ? (
+          <div className="flex justify-center p-12 border-2 border-dashed border-zinc-400 bg-zinc-50 dark:bg-zinc-900">
+            <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">NO NODES DETECTED. INITIALIZE A NEW CONNECTION BELOW.</p>
+          </div>
+        ) : null}
 
-              <FormItem>
-                <FormLabel>Driver</FormLabel>
-                <FormControl>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {savedConnections.map((connection) => {
+            const isActive = activeConnection?.id === connection.id;
+            return (
+              <div
+                key={connection.id}
+                className={`bg-background border-2 border-black dark:border-white p-5 transition-transform hover:-translate-y-1 flex flex-col justify-between h-full group ${isActive ? 'shadow-[4px_4px_0px_0px_#f97316] border-orange-500 dark:border-orange-500' : 'shadow-hardware dark:shadow-hardware-dark'}`}
+              >
+                <div>
+                  <div className="flex items-start justify-between border-b-2 border-zinc-200 dark:border-zinc-800 pb-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-red-500 max-w-[12px] min-w-[12px]'}`} />
+                      <p className="font-black uppercase tracking-widest text-lg truncate" title={connection.name}>{connection.name}</p>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${connection.name}`}
+                          disabled={deleteConnectionMutation.isPending}
+                          className="rounded-none hover:bg-red-100 hover:text-red-600 text-zinc-400 h-8 w-8"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+                            <Trash2 className="w-6 h-6" /> Terminate Node?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription className="text-foreground font-bold uppercase tracking-widest">
+                            INITIATE DELETION SEQUENCE FOR NODE: <span className="text-red-600 font-black">{connection.name}</span>?
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="mt-6">
+                          <AlertDialogCancel className="rounded-none border-2 border-black dark:border-white shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => {
+                              void handleDeleteConnection(connection.id)
+                            }}
+                            className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
+                          >
+                            Execute Deletion
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                  
+                  <div className="space-y-2 mb-6">
+                    <div className="flex items-center justify-between text-xs font-bold uppercase">
+                      <span className="text-zinc-500">DRIVER</span>
+                      <span className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 border border-zinc-300 dark:border-zinc-700">{connection.driver ?? 'UNKNOWN'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-bold uppercase">
+                      <span className="text-zinc-500">HOST</span>
+                      <span className="truncate max-w-[60%]">{connection.host || 'LOCALHOST'}</span>
+                    </div>
+                    {connection.database_name && (
+                      <div className="flex items-center justify-between text-xs font-bold uppercase">
+                        <span className="text-zinc-500">DB</span>
+                        <span className="truncate max-w-[60%]">{connection.database_name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={() => handleSelectConnection(connection)}
+                  className={`w-full rounded-none border-2 border-black dark:border-white py-6 font-black uppercase tracking-widest text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.8)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all ${
+                    isActive 
+                      ? 'bg-orange-500 text-black hover:bg-orange-400' 
+                      : 'bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {isActive ? (
+                    <span className="flex items-center gap-2"><Zap className="w-4 h-4" /> LINK ACTIVE</span>
+                  ) : (
+                    "ACTIVATE_LINK"
+                  )}
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="bg-zinc-50 dark:bg-zinc-950 border-2 border-black dark:border-white p-8 shadow-hardware mt-12 w-full max-w-2xl mx-auto">
+        <div className="mb-6 border-b-4 border-black dark:border-white pb-4">
+          <h2 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3">
+            <Plus className="w-6 h-6 border-2 border-black bg-zinc-200" />
+            INITIALIZE_NEW_NODE
+          </h2>
+        </div>
+        
+        <Form onSubmit={handleSubmit}>
+          <div className="space-y-5">
+            <FormItem>
+              <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Connection Alias</FormLabel>
+              <FormControl>
+                <Input
+                  type="text"
+                  value={connectionName}
+                  onChange={(event) => {
+                    setConnectionName(event.target.value)
+                  }}
+                  className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold uppercase focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+                  placeholder="LOCAL_DEV_DB"
+                />
+              </FormControl>
+            </FormItem>
+
+            <FormItem>
+              <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Driver</FormLabel>
+              <FormControl>
+                <div className="border-2 border-black bg-white shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)] text-black">
                   <Select
                     value={credentials.driver}
                     onValueChange={(value) => {
@@ -243,20 +314,22 @@ function App() {
                       }))
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full h-12 bg-transparent border-0 rounded-none font-bold uppercase focus:ring-0">
                       <SelectValue placeholder="Select driver" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="postgres">postgres</SelectItem>
-                      <SelectItem value="mysql">mysql</SelectItem>
-                      <SelectItem value="sqlite">sqlite</SelectItem>
+                    <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+                      <SelectItem value="postgres" className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2">PostgreSQL</SelectItem>
+                      <SelectItem value="mysql" className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2">MySQL</SelectItem>
+                      <SelectItem value="sqlite" className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2">SQLite</SelectItem>
                     </SelectContent>
                   </Select>
-                </FormControl>
-              </FormItem>
+                </div>
+              </FormControl>
+            </FormItem>
 
-              <FormItem>
-                <FormLabel>Host</FormLabel>
+            <div className="grid grid-cols-3 gap-4">
+              <FormItem className="col-span-2">
+                <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Host</FormLabel>
                 <FormControl>
                   <Input
                     type="text"
@@ -264,30 +337,35 @@ function App() {
                     onChange={(event) => {
                       setCredentials((prev) => ({ ...prev, host: event.target.value }))
                     }}
+                    placeholder="localhost"
+                    className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
                   />
                 </FormControl>
               </FormItem>
 
-              <FormItem>
-                <FormLabel>Port</FormLabel>
+              <FormItem className="col-span-1">
+                <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Port</FormLabel>
                 <FormControl>
                   <Input
                     type="number"
                     value={credentials.port ?? ''}
                     onChange={(event) => {
                       const value = event.target.value
-
                       setCredentials((prev) => ({
                         ...prev,
                         port: value === '' ? undefined : Number(value),
                       }))
                     }}
+                    placeholder="5432"
+                    className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
                   />
                 </FormControl>
               </FormItem>
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <FormItem>
-                <FormLabel>User</FormLabel>
+                <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Auth User</FormLabel>
                 <FormControl>
                   <Input
                     type="text"
@@ -295,12 +373,14 @@ function App() {
                     onChange={(event) => {
                       setCredentials((prev) => ({ ...prev, user: event.target.value }))
                     }}
+                    placeholder="root"
+                    className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
                   />
                 </FormControl>
               </FormItem>
 
               <FormItem>
-                <FormLabel>Password</FormLabel>
+                <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Auth Token</FormLabel>
                 <FormControl>
                   <Input
                     type="password"
@@ -311,62 +391,69 @@ function App() {
                         password: event.target.value,
                       }))
                     }}
+                    placeholder="••••••••"
+                    className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
                   />
                 </FormControl>
               </FormItem>
+            </div>
 
-              <FormItem>
-                <FormLabel>Database</FormLabel>
-                <FormControl>
-                  <Input
-                    type="text"
-                    value={credentials.database ?? ''}
-                    onChange={(event) => {
-                      setCredentials((prev) => ({
-                        ...prev,
-                        database: event.target.value,
-                      }))
-                    }}
-                  />
-                </FormControl>
-              </FormItem>
-
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="flex-1"
-                  disabled={saveConnectionMutation.isPending || testConnectionMutation.isPending}
-                  onClick={() => {
-                    void handleSaveConnection()
+            <FormItem>
+              <FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">Target Database</FormLabel>
+              <FormControl>
+                <Input
+                  type="text"
+                  value={credentials.database ?? ''}
+                  onChange={(event) => {
+                    setCredentials((prev) => ({
+                      ...prev,
+                      database: event.target.value,
+                    }))
                   }}
-                >
-                  {saveConnectionMutation.isPending ? 'Saving...' : 'Save Connection'}
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={testConnectionMutation.isPending || saveConnectionMutation.isPending}
-                  className="flex-1"
-                >
-                  {testConnectionMutation.isPending ? 'Testing...' : 'Test connection'}
-                </Button>
-              </div>
+                  placeholder="database_name"
+                  className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+                />
+              </FormControl>
+            </FormItem>
 
-              {status ? (
-                <div
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    status.success
-                      ? 'border-border bg-muted text-foreground'
-                      : 'border-destructive/40 bg-destructive/10 text-destructive'
-                  }`}
-                  role="status"
-                >
-                  {status.message}
-                </div>
-              ) : null}
-            </Form>
-          </CardContent>
-      </Card>
+            {status ? (
+              <div
+                className={`border-4 p-4 font-black uppercase tracking-widest text-sm flex items-center justify-between ${
+                  status.success
+                    ? 'border-emerald-500 bg-emerald-500 text-black'
+                    : 'border-red-500 bg-red-500 text-white'
+                }`}
+                role="status"
+              >
+                <span>{status.message}</span>
+                {status.success ? <Zap className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
+              </div>
+            ) : null}
+
+            <div className="flex gap-4 pt-6 mt-6 border-t-4 border-black dark:border-white">
+              <Button
+                type="submit"
+                disabled={testConnectionMutation.isPending || saveConnectionMutation.isPending}
+                className="flex-1 rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-black uppercase text-sm tracking-widest bg-zinc-200 text-black hover:bg-zinc-300 h-16 py-4"
+              >
+                {testConnectionMutation.isPending ? 'Probing...' : 'TEST_CONNECTION'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-[2] rounded-none border-4 border-black shadow-hardware active:translate-x-[4px] active:translate-y-[4px] active:shadow-none font-black uppercase text-lg tracking-widest bg-orange-500 text-black hover:bg-orange-400 h-16 py-4 flex items-center gap-3"
+                disabled={saveConnectionMutation.isPending || testConnectionMutation.isPending}
+                onClick={() => {
+                  void handleSaveConnection()
+                }}
+              >
+                <Save className="w-6 h-6" />
+                {saveConnectionMutation.isPending ? 'WRITING...' : 'SAVE_CONFIGURATION'}
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </div>
     </section>
   )
 }

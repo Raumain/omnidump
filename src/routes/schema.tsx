@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, AlertTriangle, KeyRound } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useActiveConnection } from '../hooks/use-active-connection.tsx'
@@ -272,16 +272,16 @@ function SchemaPage() {
 
   if (!activeConnection) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+      <main className="mx-auto flex min-h-screen w-full flex-col gap-8 p-6 md:p-10 font-mono">
+        <Card className="w-full max-w-md bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
           <CardHeader>
-            <CardTitle>No active connection selected.</CardTitle>
+            <CardTitle className="text-2xl font-black uppercase tracking-wider">No active connection selected.</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+          <CardContent className="flex items-center justify-between gap-3 pt-6">
+            <p className="text-sm font-bold uppercase">
               Select a saved connection to explore its schema.
             </p>
-            <Button asChild>
+            <Button asChild className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200">
               <Link to="/">Back</Link>
             </Button>
           </CardContent>
@@ -291,77 +291,89 @@ function SchemaPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
+    <main className="mx-auto flex min-h-screen w-full flex-col gap-8 p-6 md:p-10 font-mono">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between bg-zinc-950 p-6 border-2 border-black dark:border-white shadow-hardware dark:shadow-hardware-dark">
         <div>
-          <h1 className="text-xl font-semibold">Schema Explorer</h1>
-          <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
+          <h1 className="text-3xl font-black uppercase tracking-wider text-white">Schema Explorer</h1>
+          <div className="mt-2 flex items-center gap-3">
+            <span className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{activeConnection.name}</span>
+            <div className="bg-black border-2 border-orange-500 px-3 py-1 text-orange-500 font-black text-xl tracking-widest flex items-center gap-2">
+              <span className="text-[10px] uppercase text-orange-700">TABLES:</span>
+              <span className="animate-pulse">{tables.length.toString().padStart(3, '0')}</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={schemaExportFormat}
-            onValueChange={(value) => {
-              setSchemaExportFormat(value as 'json' | 'dbml')
-            }}
-          >
-            <SelectTrigger className="w-[190px]">
-              <SelectValue placeholder="Select export format" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="json">Export as JSON</SelectItem>
-              <SelectItem value="dbml">Export as DBML</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-zinc-100 p-2 border-2 border-black">
+            <Select
+              value={schemaExportFormat}
+              onValueChange={(value) => {
+                setSchemaExportFormat(value as 'json' | 'dbml')
+              }}
+            >
+              <SelectTrigger className="w-[140px] rounded-none border-2 border-black shadow-hardware text-black font-bold uppercase disabled:opacity-50">
+                <SelectValue placeholder="Format" />
+              </SelectTrigger>
+              <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+                <SelectItem value="json" className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer">Export JSON</SelectItem>
+                <SelectItem value="dbml" className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer">Export DBML</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              onClick={() => {
+                window.location.href = `/api/export-schema?connectionId=${activeConnection.id}&format=${schemaExportFormat}`
+              }}
+              disabled={
+                isDumping ||
+                isWipingAllData ||
+                isDroppingAllTables ||
+                clearTableMutation.isPending ||
+                isRestoringDump
+              }
+              className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
+            >
+              Export Schema
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 bg-zinc-100 p-2 border-2 border-black">
+            <Select
+              value={dumpType}
+              onValueChange={(value) => {
+                setDumpType(value as 'schema' | 'data' | 'both')
+              }}
+            >
+              <SelectTrigger className="w-[150px] rounded-none border-2 border-black shadow-hardware text-black font-bold uppercase disabled:opacity-50">
+                <SelectValue placeholder="Dump type" />
+              </SelectTrigger>
+              <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+                <SelectItem value="schema" className="font-bold uppercase rounded-none focus:bg-zinc-200  hover:!bg-zinc-400 bg-white text-black cursor-pointer">Schema Only</SelectItem>
+                <SelectItem value="data" className="font-bold uppercase rounded-none focus:bg-zinc-200  hover:!bg-zinc-400 bg-white text-black cursor-pointer">Data Only</SelectItem>
+                <SelectItem value="both" className="font-bold uppercase rounded-none focus:bg-zinc-200  hover:!bg-zinc-400 bg-white text-black cursor-pointer">Schema + Data</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              onClick={() => {
+                dumpMutation.mutate()
+              }}
+              disabled={
+                isDumping ||
+                isWipingAllData ||
+                isDroppingAllTables ||
+                clearTableMutation.isPending ||
+                isRestoringDump
+              }
+              className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
+            >
+              {isDumping ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <Download className="w-4 h-4 mr-2" />}
+              {isDumping ? 'Saving...' : 'Dump SQL'}
+            </Button>
+          </div>
+
           <Button
             type="button"
-            variant="outline"
-            onClick={() => {
-              window.location.href = `/api/export-schema?connectionId=${activeConnection.id}&format=${schemaExportFormat}`
-            }}
-            disabled={
-              isDumping ||
-              isWipingAllData ||
-              isDroppingAllTables ||
-              clearTableMutation.isPending ||
-              isRestoringDump
-            }
-          >
-            Export Schema
-          </Button>
-          <Select
-            value={dumpType}
-            onValueChange={(value) => {
-              setDumpType(value as 'schema' | 'data' | 'both')
-            }}
-          >
-            <SelectTrigger className="w-[190px]">
-              <SelectValue placeholder="Select dump type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="schema">Schema Only</SelectItem>
-              <SelectItem value="data">Data Only</SelectItem>
-              <SelectItem value="both">Schema + Data</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            onClick={() => {
-              dumpMutation.mutate()
-            }}
-            disabled={
-              isDumping ||
-              isWipingAllData ||
-              isDroppingAllTables ||
-              clearTableMutation.isPending ||
-              isRestoringDump
-            }
-          >
-            {isDumping ? <Loader2 className="animate-spin" /> : <Download />}
-            {isDumping ? 'Saving Dump...' : 'Download SQL Dump'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
             disabled={
               isWipingAllData ||
               isDroppingAllTables ||
@@ -371,39 +383,44 @@ function SchemaPage() {
             onClick={() => {
               setIsRestoreModalOpen(true)
             }}
+            className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-orange-500 text-black hover:bg-orange-600"
           >
-            Restore Dump
+            Restore
           </Button>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
                 type="button"
-                variant="destructive"
                 disabled={
                   wipeAllDataMutation.isPending ||
                   dropAllTablesMutation.isPending ||
                   clearTableMutation.isPending
                 }
+                className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 flex items-center gap-2"
               >
-                {isWipingAllData ? 'Wiping...' : 'Wipe All Data'}
+                <AlertTriangle className="w-4 h-4" />
+                {isWipingAllData ? 'Wiping...' : 'Wipe Data'}
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
               <AlertDialogHeader>
-                <AlertDialogTitle>Wipe all data?</AlertDialogTitle>
-                <AlertDialogDescription>
+                <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+                  <AlertTriangle className="w-6 h-6" /> Wipe all data?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-black dark:text-zinc-300 font-bold">
                   WARNING: This will delete ALL data across ALL tables in this database. The schema will remain intact. This action is irreversible.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogFooter className="mt-6">
+                <AlertDialogCancel className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  variant="destructive"
                   onClick={() => {
                     wipeAllDataMutation.mutate()
                   }}
+                  className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
                 >
-                  {isWipingAllData ? 'Wiping...' : 'Continue'}
+                  {isWipingAllData ? 'Wiping...' : 'Execute Wipe'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -412,43 +429,40 @@ function SchemaPage() {
             <AlertDialogTrigger asChild>
               <Button
                 type="button"
-                variant="destructive"
                 disabled={
                   dropAllTablesMutation.isPending ||
                   wipeAllDataMutation.isPending ||
                   clearTableMutation.isPending ||
                   isRestoringDump
                 }
+                className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 flex items-center gap-2"
               >
-                {isDroppingAllTables ? 'Dropping...' : 'Drop All Tables'}
+                <AlertTriangle className="w-4 h-4" />
+                {isDroppingAllTables ? 'Dropping...' : 'Drop Total'}
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
               <AlertDialogHeader>
-                <AlertDialogTitle>Drop all tables?</AlertDialogTitle>
-                <AlertDialogDescription>
+                <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+                  <AlertTriangle className="w-6 h-6" /> Drop all tables?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-black dark:text-zinc-300 font-bold">
                   DANGER: This will completely DESTROY ALL TABLES and their data. Your database schema will be wiped clean. You will need to rerun your ORM migrations to rebuild the structure. This is completely irreversible.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogFooter className="mt-6">
+                <AlertDialogCancel className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  variant="destructive"
                   onClick={() => {
                     dropAllTablesMutation.mutate()
                   }}
+                  className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
                 >
-                  {isDroppingAllTables ? 'Dropping...' : 'Continue'}
+                  {isDroppingAllTables ? 'Dropping...' : 'Execute Drop'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button variant="outline" asChild>
-            <Link to="/import">Import CSV</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/">Back</Link>
-          </Button>
         </div>
       </div>
 
@@ -462,48 +476,49 @@ function SchemaPage() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="rounded-none border-4 border-black shadow-hardware font-mono sm:max-w-xl md:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Restore local SQL dump</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-2xl font-black uppercase text-foreground">Restore local SQL dump</DialogTitle>
+            <DialogDescription className="text-white font-bold">
               Select a dump from the exports directory to restore it into the active database.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2">
+          <div className="space-y-4 my-4">
             {availableDumpsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading dumps...</p>
+              <p className="text-sm font-bold uppercase animate-pulse">Loading dumps...</p>
             ) : null}
 
             {!availableDumpsQuery.isLoading && availableDumps.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No SQL dumps found in exports/.</p>
+              <p className="text-sm font-bold uppercase text-red-600">No SQL dumps found in exports/.</p>
             ) : null}
 
             {availableDumps.length > 0 ? (
-              <Select value={selectedDumpPath} onValueChange={setSelectedDumpPath}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a .sql dump file" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDumps.map((filePath) => (
-                    <SelectItem key={filePath} value={filePath}>
-                      {filePath}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="border-2 border-black p-2 bg-zinc-100 shadow-inner">
+                <Select value={selectedDumpPath} onValueChange={setSelectedDumpPath}>
+                  <SelectTrigger className="w-full rounded-none border-2 border-black bg-white text-black shadow-hardware font-bold">
+                    <SelectValue placeholder="Select a .sql dump file" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+                    {availableDumps.map((filePath) => (
+                      <SelectItem key={filePath} value={filePath} className="rounded-none cursor-pointer  hover:!bg-zinc-400 bg-white text-black focus:bg-zinc-200">
+                        {filePath}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             ) : null}
           </div>
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={isRestoringDump}>
+              <Button type="button" disabled={isRestoringDump} className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-200 text-black hover:bg-zinc-300">
                 Cancel
               </Button>
             </DialogClose>
             <Button
               type="button"
-              variant="destructive"
               disabled={
                 isRestoringDump ||
                 availableDumpsQuery.isLoading ||
@@ -512,8 +527,9 @@ function SchemaPage() {
               onClick={() => {
                 restoreDumpMutation.mutate(selectedDumpPath)
               }}
+              className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-orange-500 text-black hover:bg-orange-600"
             >
-              {isRestoringDump ? <Loader2 className="animate-spin" /> : null}
+              {isRestoringDump ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
               {isRestoringDump ? 'Restoring...' : 'Confirm Restore'}
             </Button>
           </DialogFooter>
@@ -521,87 +537,109 @@ function SchemaPage() {
       </Dialog>
 
       {schemaQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground">Introspecting database...</p>
+        <div className="flex items-center gap-3 bg-zinc-950 text-white p-4 border-2 border-black shadow-hardware">
+          <Loader2 className="animate-spin w-6 h-6 text-orange-500" />
+          <p className="text-xl font-black uppercase tracking-widest text-orange-500 blink">Introspecting database...</p>
+        </div>
       ) : null}
 
       {clearingTableName ? (
-        <p className="text-sm text-muted-foreground">
-          Clearing data from {clearingTableName}...
-        </p>
+        <div className="flex items-center gap-3 bg-red-600 text-white p-4 border-2 border-black shadow-hardware">
+          <Loader2 className="animate-spin w-6 h-6" />
+          <p className="text-xl font-black uppercase tracking-widest">Clearing {clearingTableName}...</p>
+        </div>
       ) : null}
 
       {isWipingAllData ? (
-        <p className="text-sm text-muted-foreground">Wiping data from all tables...</p>
+        <div className="flex items-center gap-3 bg-red-600 text-white p-4 border-2 border-black shadow-hardware">
+          <Loader2 className="animate-spin w-6 h-6" />
+          <p className="text-xl font-black uppercase tracking-widest">Wiping complete sector...</p>
+        </div>
       ) : null}
 
       {isDroppingAllTables ? (
-        <p className="text-sm text-muted-foreground">Dropping all tables...</p>
+        <div className="flex items-center gap-3 bg-red-600 text-white p-4 border-2 border-black shadow-hardware">
+          <Loader2 className="animate-spin w-6 h-6" />
+          <p className="text-xl font-black uppercase tracking-widest">Dropping structural core...</p>
+        </div>
       ) : null}
 
       {schemaError ? (
-        <Card>
-          <CardContent className="pt-6 text-sm text-destructive">{schemaError}</CardContent>
+        <Card className="rounded-none border-4 border-red-600 bg-black text-red-500 shadow-hardware">
+          <CardContent className="pt-6">
+            <h2 className="text-xl font-black uppercase mb-2 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Error</h2>
+            <p className="font-mono text-sm">{schemaError}</p>
+          </CardContent>
         </Card>
       ) : null}
 
       {!schemaQuery.isLoading && !schemaError ? (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {tables.map((table) => (
-            <Card key={table.tableName}>
-              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-                <CardTitle className="text-base">{table.tableName}</CardTitle>
+            <Card key={table.tableName} className="rounded-none border-2 border-black dark:border-white p-0 bg-zinc-50 dark:bg-zinc-950 shadow-hardware dark:shadow-hardware-dark flex flex-col h-full">
+              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 bg-black text-white p-4 border-b-2 border-black dark:border-white">
+                <CardTitle className="text-lg font-black uppercase tracking-widest truncate">{table.tableName}</CardTitle>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
                       type="button"
-                      variant="destructive"
                       size="sm"
                       disabled={clearTableMutation.isPending || isDroppingAllTables}
+                      className="rounded-none border-2 border-white shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 h-8 text-[10px]"
                     >
-                      {clearingTableName === table.tableName ? 'Clearing...' : 'Clear Data'}
+                      {clearingTableName === table.tableName ? 'WAIT' : 'CLEAR'}
                     </Button>
                   </AlertDialogTrigger>
-                  <AlertDialogContent>
+                  <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Clear table data?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to delete ALL rows from {table.tableName}? This action cannot be undone.
+                      <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+                        <AlertTriangle className="w-6 h-6" /> Clear Data?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription className="text-black dark:text-gray-300 font-bold">
+                        Delete ALL rows from {table.tableName}? Unrecoverable.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogFooter className="mt-6">
+                      <AlertDialogCancel className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        variant="destructive"
                         onClick={() => {
                           clearTableMutation.mutate(table.tableName)
                         }}
+                        className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
                       >
-                        {clearingTableName === table.tableName ? 'Clearing...' : 'Continue'}
+                        {clearingTableName === table.tableName ? 'Clearing...' : 'Confirm Clear'}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
               </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
+              <CardContent className="p-4 flex-grow overflow-x-auto">
+                <ul className="space-y-1">
                   {table.columns.map((column) => (
                     <li
                       key={`${table.tableName}-${column.name}`}
-                      className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                      className="flex items-center justify-between gap-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-1 last:border-0"
                     >
-                      <span className="truncate text-sm font-medium">{column.name}</span>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="rounded border bg-muted px-1.5 py-0.5 text-muted-foreground">
+                      <div className="flex items-center gap-2 max-w-[60%]">
+                        {column.name.toLowerCase().includes('id') || column.name.toLowerCase().includes('key') ? (
+                          <KeyRound className="w-3 h-3 text-orange-500 shrink-0" />
+                        ) : (
+                          <span className="w-3 h-3 block shrink-0" />
+                        )}
+                        <span className="truncate text-sm font-bold">{column.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold shrink-0">
+                        <span className="bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white px-1.5 py-0.5 border border-zinc-300 dark:border-zinc-700">
                           {column.dataType}
                         </span>
                         <span
                           className={
                             column.isNullable
-                              ? 'rounded border border-border bg-muted px-1.5 py-0.5 text-muted-foreground'
-                              : 'rounded border border-border bg-background px-1.5 py-0.5'
+                              ? 'bg-transparent text-zinc-400 border border-zinc-300 dark:border-zinc-700 px-1.5 py-0.5 decoration-zinc-400'
+                              : 'bg-black text-white dark:bg-white dark:text-black px-1.5 py-0.5'
                           }
                         >
-                          {column.isNullable ? 'nullable' : 'required'}
+                          {column.isNullable ? 'NULL' : 'REQ'}
                         </span>
                       </div>
                     </li>
