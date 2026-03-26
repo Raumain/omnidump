@@ -90,75 +90,132 @@ export const Route = createFileRoute('/api/import')({
         }
 
         const db = getKyselyInstance(toDbCredentials(connection))
+        const encoder = new TextEncoder()
 
-        try {
-          const parser = parse({
-            columns: true,
-            skip_empty_lines: true,
-            delimiter: [',', ';'],
-          })
+        const stream = new ReadableStream({
+          async start(controller) {
+            let successfulRows = 0
+            let failedRows = 0
+            let isClosed = false
 
-          const streamReader = file.stream().getReader()
-          const pumpStreamToParser = (async () => {
+            const sendEvent = (payload: {
+              successfulRows: number
+              failedRows: number
+              status: 'processing' | 'completed' | 'failed'
+              error?: string
+            }) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+            }
+
+            const closeController = () => {
+              if (isClosed) {
+                return
+              }
+
+              isClosed = true
+              controller.close()
+            }
+
             try {
-              while (true) {
-                const { done, value } = await streamReader.read()
+              const parser = parse({
+                columns: true,
+                skip_empty_lines: true,
+                delimiter: [',', ';'],
+              })
 
-                if (done) {
-                  break
+              const streamReader = file.stream().getReader()
+              const pumpStreamToParser = (async () => {
+                try {
+                  while (true) {
+                    const { done, value } = await streamReader.read()
+
+                    if (done) {
+                      break
+                    }
+
+                    if (value) {
+                      parser.write(value)
+                    }
+                  }
+
+                  parser.end()
+                } catch (error) {
+                  parser.destroy(error as Error)
+                } finally {
+                  streamReader.releaseLock()
+                }
+              })()
+
+              let batch: Array<Record<string, unknown>> = []
+
+              const flushBatch = async () => {
+                if (batch.length === 0) {
+                  return
                 }
 
-                if (value) {
-                  parser.write(value)
+                const attemptedBatchLength = batch.length
+
+                try {
+                  await db.insertInto(tableName as never).values(batch as never).execute()
+                  successfulRows += attemptedBatchLength
+                } catch (error) {
+                  failedRows += attemptedBatchLength
+                  console.error('Batch insert failed during CSV import', error)
+                }
+
+                sendEvent({ successfulRows, failedRows, status: 'processing' })
+                batch = []
+              }
+
+              for await (const record of parser) {
+                const mappedRow: Record<string, unknown> = {}
+
+                for (const [csvHeader, dbColumn] of Object.entries(mapping)) {
+                  if (!dbColumn) {
+                    continue
+                  }
+
+                  mappedRow[dbColumn] = record[csvHeader]
+                }
+
+                if (Object.keys(mappedRow).length === 0) {
+                  continue
+                }
+
+                batch.push(mappedRow)
+
+                if (batch.length >= IMPORT_BATCH_SIZE) {
+                  await flushBatch()
                 }
               }
 
-              parser.end()
+              await flushBatch()
+              await pumpStreamToParser
+
+              sendEvent({ successfulRows, failedRows, status: 'completed' })
             } catch (error) {
-              parser.destroy(error as Error)
+              const message = error instanceof Error ? error.message : 'Import failed.'
+
+              sendEvent({
+                successfulRows,
+                failedRows,
+                status: 'failed',
+                error: message,
+              })
             } finally {
-              streamReader.releaseLock()
+              await db.destroy()
+              closeController()
             }
-          })()
+          },
+        })
 
-          let batch: Array<Record<string, unknown>> = []
-
-          for await (const record of parser) {
-            const mappedRow: Record<string, unknown> = {}
-
-            for (const [csvHeader, dbColumn] of Object.entries(mapping)) {
-              if (!dbColumn) {
-                continue
-              }
-
-              mappedRow[dbColumn] = record[csvHeader]
-            }
-
-            if (Object.keys(mappedRow).length === 0) {
-              continue
-            }
-
-            batch.push(mappedRow)
-
-            if (batch.length >= IMPORT_BATCH_SIZE) {
-              await db.insertInto(tableName as never).values(batch as never).execute()
-              batch = []
-            }
-          }
-
-          if (batch.length > 0) {
-            await db.insertInto(tableName as never).values(batch as never).execute()
-          }
-
-          await pumpStreamToParser
-
-          return Response.json({ success: true, message: 'Import complete' })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Import failed.'
-          return Response.json({ success: false, error: message }, { status: 500 })
-        } finally {
-          await db.destroy()
-        }
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          },
+        })
       },
     },
   },

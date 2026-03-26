@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { type ChangeEvent, useEffect, useState } from 'react'
+import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -26,6 +26,9 @@ function ImportPage() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [selectedTable, setSelectedTable] = useState('')
   const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [successfulCount, setSuccessfulCount] = useState(0)
+  const [failedCount, setFailedCount] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const activeConnectionQuery = useQuery({
     queryKey: ['active-connection'],
@@ -79,6 +82,9 @@ function ImportPage() {
   const selectedTableColumns =
     tables.find((table) => table.tableName === selectedTable)?.columns ?? []
 
+  const isMappingReady =
+    csvHeaders.length > 0 && csvHeaders.every((header) => Boolean(mapping[header]))
+
   const importMutation = useMutation({
     mutationFn: async (input: {
       file: File
@@ -97,23 +103,72 @@ function ImportPage() {
         body: formData,
       })
 
-      const data = (await response.json()) as
-        | { success: true; message: string }
-        | { success: false; error: string }
-
-      if (!response.ok || !data.success) {
-        const message = 'error' in data ? data.error : 'Import failed.'
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+        const message = errorData?.error ?? 'Import failed.'
         throw new Error(message)
       }
 
-      return data.message
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) {
+        throw new Error('Import stream is unavailable.')
+      }
+
+      let pendingChunk = ''
+
+      const processEvent = (event: string) => {
+        const dataLine = event
+          .split('\n')
+          .find((line) => line.startsWith('data: '))
+
+        if (!dataLine) {
+          return
+        }
+
+        const payload = JSON.parse(dataLine.slice(6)) as {
+          successfulRows?: number
+          failedRows?: number
+          status?: 'processing' | 'completed' | 'failed'
+          error?: string
+        }
+
+        setSuccessfulCount(payload.successfulRows ?? 0)
+        setFailedCount(payload.failedRows ?? 0)
+
+        if (payload.status === 'failed') {
+          throw new Error(payload.error ?? 'Import failed.')
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          break
+        }
+
+        pendingChunk += decoder.decode(value, { stream: true })
+        const events = pendingChunk.split('\n\n')
+        pendingChunk = events.pop() ?? ''
+
+        for (const event of events) {
+          processEvent(event)
+        }
+      }
+
+      const trailingEvent = pendingChunk.trim()
+
+      if (trailingEvent) {
+        processEvent(trailingEvent)
+      }
     },
-    onSuccess: (message) => {
-      alert(message)
-      setFile(null)
-      setCsvHeaders([])
-      setSelectedTable('')
-      setMapping({})
+    onMutate: () => {
+      setSuccessfulCount(0)
+      setFailedCount(0)
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : 'Import failed.'
@@ -121,13 +176,25 @@ function ImportPage() {
     },
   })
 
-  const isMappingReady =
-    csvHeaders.length > 0 && csvHeaders.every((header) => Boolean(mapping[header]))
   const canImport =
     Boolean(file) &&
     Boolean(selectedTable) &&
     isMappingReady &&
     !importMutation.isPending
+
+  const resetForm = () => {
+    setFile(null)
+    setCsvHeaders([])
+    setSelectedTable('')
+    setMapping({})
+    setSuccessfulCount(0)
+    setFailedCount(0)
+    importMutation.reset()
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   useEffect(() => {
     if (!selectedTable || csvHeaders.length === 0) {
@@ -220,7 +287,12 @@ function ImportPage() {
           <CardTitle className="text-base">1. Select CSV File</CardTitle>
         </CardHeader>
         <CardContent>
-          <Input type="file" accept=".csv" onChange={handleFileChange} />
+          <Input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileChange}
+          />
         </CardContent>
       </Card>
 
@@ -307,13 +379,36 @@ function ImportPage() {
         </Card>
       ) : null}
 
+      {importMutation.isPending || importMutation.isSuccess || importMutation.isError ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Import Progress</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>Rows Inserted: {successfulCount}</p>
+            <p className="text-destructive">Rows Failed: {failedCount}</p>
+
+            {importMutation.isSuccess ? (
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium">Done</p>
+                <Button type="button" onClick={resetForm}>
+                  Reset Form
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="mt-auto flex items-center justify-between gap-2">
         <Button variant="outline" asChild>
           <Link to="/">Back</Link>
         </Button>
-        <Button type="button" onClick={handleImport} disabled={!canImport}>
-          {importMutation.isPending ? 'Importing...' : 'Start Import'}
-        </Button>
+        {!importMutation.isPending ? (
+          <Button type="button" onClick={handleImport} disabled={!canImport}>
+            Start Import
+          </Button>
+        ) : null}
       </div>
     </main>
   )
