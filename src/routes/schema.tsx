@@ -72,7 +72,7 @@ function SchemaPage() {
   const queryClient = useQueryClient()
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false)
   const [selectedDumpPath, setSelectedDumpPath] = useState('')
-  const [isDumping, setIsDumping] = useState(false)
+  const [dumpType, setDumpType] = useState<'schema' | 'data' | 'both'>('both')
 
   const activeConnectionQuery = useQuery({
     queryKey: ['active-connection'],
@@ -231,38 +231,39 @@ function SchemaPage() {
     },
   })
 
+  const dumpMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(
+        `/api/dump?connectionId=${activeConnection.id}&dumpType=${dumpType}`,
+      )
+
+      const result = (await response.json().catch(() => null)) as
+        | { success?: boolean; error?: string }
+        | null
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error ?? 'Failed to save SQL dump.')
+      }
+
+      return result
+    },
+    onSuccess: () => {
+      toast.success('Dump saved to server disk.')
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      toast.error(message)
+      console.error('Failed to save SQL dump:', message)
+    },
+  })
+
   const clearingTableName = clearTableMutation.isPending
     ? clearTableMutation.variables
     : null
   const isWipingAllData = wipeAllDataMutation.isPending
   const isRestoringDump = restoreDumpMutation.isPending
+  const isDumping = dumpMutation.isPending
   const availableDumps = availableDumpsQuery.data ?? []
-
-  const handleDownloadDump = async () => {
-    setIsDumping(true)
-
-    try {
-      const response = await fetch(`/api/dump?connectionId=${activeConnection.id}`)
-
-      const result = await response.json().catch(() => null) as
-        | { success?: boolean; error?: string }
-        | null
-
-      if (!response.ok || !result?.success) {
-        const message = result?.error ?? 'Failed to save SQL dump.'
-        toast.error(message)
-        return
-      }
-
-      toast.success('Dump saved to server disk.')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      toast.error(message)
-      console.error('Failed to save SQL dump:', message)
-    } finally {
-      setIsDumping(false)
-    }
-  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">
@@ -272,10 +273,25 @@ function SchemaPage() {
           <p className="text-sm text-muted-foreground">{activeConnection.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select
+            value={dumpType}
+            onValueChange={(value) => {
+              setDumpType(value as 'schema' | 'data' | 'both')
+            }}
+          >
+            <SelectTrigger className="w-[190px]">
+              <SelectValue placeholder="Select dump type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="schema">Schema Only</SelectItem>
+              <SelectItem value="data">Data Only</SelectItem>
+              <SelectItem value="both">Schema + Data</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             type="button"
             onClick={() => {
-              void handleDownloadDump()
+              dumpMutation.mutate()
             }}
             disabled={isDumping || isWipingAllData || clearTableMutation.isPending || isRestoringDump}
           >

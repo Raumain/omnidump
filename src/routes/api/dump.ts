@@ -5,6 +5,11 @@ import type { SavedConnection } from '../../server/connection-fns'
 
 const BATCH_SIZE = 5000
 
+type DumpType = 'schema' | 'data' | 'both'
+
+const isDumpType = (value: string | null): value is DumpType =>
+  value === 'schema' || value === 'data' || value === 'both'
+
 const escapeIdentifier = (value: string): string => `"${value.replaceAll('"', '""')}"`
 
 const serializeValue = (value: unknown): string => {
@@ -60,7 +65,9 @@ export const Route = createFileRoute('/api/dump')({
 
         const url = new URL(request.url)
         const connectionIdParam = url.searchParams.get('connectionId')
+        const dumpTypeParam = url.searchParams.get('dumpType')
         const connectionId = Number(connectionIdParam)
+        const dumpType: DumpType = isDumpType(dumpTypeParam) ? dumpTypeParam : 'both'
 
         if (!connectionIdParam || Number.isNaN(connectionId)) {
           return new Response('Invalid connectionId query parameter.', {
@@ -80,7 +87,9 @@ export const Route = createFileRoute('/api/dump')({
           connection.name?.trim() || connection.database_name?.trim() || 'default'
         const safeConnectionName = connectionName.replaceAll(/[\\/:*?"<>|]/g, '_')
         const dirPath = `./exports/dumps/${safeConnectionName}/default`
-        const fileName = `dump_${Date.now()}.sql`
+        const dumpPrefix =
+          dumpType === 'schema' ? 'schema' : dumpType === 'data' ? 'data' : 'dump'
+        const fileName = `${dumpPrefix}_${Date.now()}.sql`
         const fullPath = `${dirPath}/${fileName}`
         mkdirSync(dirPath, { recursive: true })
 
@@ -130,6 +139,24 @@ export const Route = createFileRoute('/api/dump')({
 
             if (columnNames.length === 0) {
               writer.write('\n')
+              continue
+            }
+
+            if (dumpType === 'schema' || dumpType === 'both') {
+              let ddl = `CREATE TABLE "${table.name}" (\n`
+
+              ddl += table.columns
+                .map(
+                  (col) =>
+                    `  "${col.name}" ${col.dataType} ${col.isNullable ? '' : 'NOT NULL'}`,
+                )
+                .join(',\n')
+
+              ddl += '\n);\n\n'
+              writer.write(ddl)
+            }
+
+            if (dumpType === 'schema') {
               continue
             }
 
