@@ -14,6 +14,7 @@ import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiImportRouteImport } from './routes/api/import'
 import { Route as ApiDumpRouteImport } from './routes/api/dump'
+import { Route as ApiDownloadRejectRouteImport } from './routes/api/download-reject'
 
 const SchemaRoute = SchemaRouteImport.update({
   id: '/schema',
@@ -40,11 +41,17 @@ const ApiDumpRoute = ApiDumpRouteImport.update({
   path: '/api/dump',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDownloadRejectRoute = ApiDownloadRejectRouteImport.update({
+  id: '/api/download-reject',
+  path: '/api/download-reject',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/import': typeof ApiImportRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/import': typeof ApiImportRoute
 }
@@ -60,21 +68,42 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/import': typeof ApiImportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
+  fullPaths:
+    | '/'
+    | '/import'
+    | '/schema'
+    | '/api/download-reject'
+    | '/api/dump'
+    | '/api/import'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
-  id: '__root__' | '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
+  to:
+    | '/'
+    | '/import'
+    | '/schema'
+    | '/api/download-reject'
+    | '/api/dump'
+    | '/api/import'
+  id:
+    | '__root__'
+    | '/'
+    | '/import'
+    | '/schema'
+    | '/api/download-reject'
+    | '/api/dump'
+    | '/api/import'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ImportRoute: typeof ImportRoute
   SchemaRoute: typeof SchemaRoute
+  ApiDownloadRejectRoute: typeof ApiDownloadRejectRoute
   ApiDumpRoute: typeof ApiDumpRoute
   ApiImportRoute: typeof ApiImportRoute
 }
@@ -116,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDumpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/download-reject': {
+      id: '/api/download-reject'
+      path: '/api/download-reject'
+      fullPath: '/api/download-reject'
+      preLoaderRoute: typeof ApiDownloadRejectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -123,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ImportRoute: ImportRoute,
   SchemaRoute: SchemaRoute,
+  ApiDownloadRejectRoute: ApiDownloadRejectRoute,
   ApiDumpRoute: ApiDumpRoute,
   ApiImportRoute: ApiImportRoute,
 }

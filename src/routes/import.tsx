@@ -28,6 +28,7 @@ function ImportPage() {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [successfulCount, setSuccessfulCount] = useState(0)
   const [failedCount, setFailedCount] = useState(0)
+  const [rejectFileName, setRejectFileName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const activeConnectionQuery = useQuery({
@@ -134,10 +135,15 @@ function ImportPage() {
           failedRows?: number
           status?: 'processing' | 'completed' | 'failed'
           error?: string
+          rejectFileName?: string
         }
 
         setSuccessfulCount(payload.successfulRows ?? 0)
         setFailedCount(payload.failedRows ?? 0)
+
+        if (payload.status === 'completed') {
+          setRejectFileName(payload.rejectFileName ?? null)
+        }
 
         if (payload.status === 'failed') {
           throw new Error(payload.error ?? 'Import failed.')
@@ -169,6 +175,7 @@ function ImportPage() {
     onMutate: () => {
       setSuccessfulCount(0)
       setFailedCount(0)
+      setRejectFileName(null)
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : 'Import failed.'
@@ -189,6 +196,7 @@ function ImportPage() {
     setMapping({})
     setSuccessfulCount(0)
     setFailedCount(0)
+    setRejectFileName(null)
     importMutation.reset()
 
     if (fileInputRef.current) {
@@ -389,11 +397,23 @@ function ImportPage() {
             <p className="text-destructive">Rows Failed: {failedCount}</p>
 
             {importMutation.isSuccess ? (
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="font-medium">Done</p>
-                <Button type="button" onClick={resetForm}>
-                  Reset Form
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {failedCount > 0 && rejectFileName ? (
+                    <Button variant="destructive" asChild>
+                      <a
+                        href={`/api/download-reject?fileName=${encodeURIComponent(rejectFileName)}`}
+                      >
+                        Download Failed Rows (CSV)
+                      </a>
+                    </Button>
+                  ) : null}
+
+                  <Button type="button" onClick={resetForm}>
+                    Reset Form
+                  </Button>
+                </div>
               </div>
             ) : null}
           </CardContent>
