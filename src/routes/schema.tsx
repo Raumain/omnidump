@@ -85,6 +85,9 @@ function SchemaPage() {
             Download SQL Dump
           </Button>
           <Button variant="outline" asChild>
+            <Link to="/import">Import CSV</Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link to="/">Back</Link>
           </Button>
         </div>

@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SchemaRouteImport } from './routes/schema'
+import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiImportRouteImport } from './routes/api/import'
 import { Route as ApiDumpRouteImport } from './routes/api/dump'
 
 const SchemaRoute = SchemaRouteImport.update({
@@ -18,9 +20,19 @@ const SchemaRoute = SchemaRouteImport.update({
   path: '/schema',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportRoute = ApiImportRouteImport.update({
+  id: '/api/import',
+  path: '/api/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDumpRoute = ApiDumpRouteImport.update({
@@ -31,32 +43,40 @@ const ApiDumpRoute = ApiDumpRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
   '/api/dump': typeof ApiDumpRoute
+  '/api/import': typeof ApiImportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
   '/api/dump': typeof ApiDumpRoute
+  '/api/import': typeof ApiImportRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
   '/api/dump': typeof ApiDumpRoute
+  '/api/import': typeof ApiImportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/schema' | '/api/dump'
+  fullPaths: '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/schema' | '/api/dump'
-  id: '__root__' | '/' | '/schema' | '/api/dump'
+  to: '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
+  id: '__root__' | '/' | '/import' | '/schema' | '/api/dump' | '/api/import'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ImportRoute: typeof ImportRoute
   SchemaRoute: typeof SchemaRoute
   ApiDumpRoute: typeof ApiDumpRoute
+  ApiImportRoute: typeof ApiImportRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -68,11 +88,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SchemaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/import': {
+      id: '/api/import'
+      path: '/api/import'
+      fullPath: '/api/import'
+      preLoaderRoute: typeof ApiImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/dump': {
@@ -87,8 +121,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ImportRoute: ImportRoute,
   SchemaRoute: SchemaRoute,
   ApiDumpRoute: ApiDumpRoute,
+  ApiImportRoute: ApiImportRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
