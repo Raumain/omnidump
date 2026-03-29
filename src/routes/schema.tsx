@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Download, Loader2, AlertTriangle, KeyRound } from 'lucide-react'
+import { Download, Loader2, AlertTriangle, KeyRound, Dna } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useActiveConnection } from '../hooks/use-active-connection.tsx'
@@ -76,6 +76,7 @@ function SchemaPage() {
   const [selectedDumpPath, setSelectedDumpPath] = useState('')
   const [dumpType, setDumpType] = useState<'schema' | 'data' | 'both'>('both')
   const [schemaExportFormat, setSchemaExportFormat] = useState<'json' | 'dbml'>('json')
+  const [seedCounts, setSeedCounts] = useState<Record<string, string>>({})
 
   const { activeConnection } = useActiveConnection()
 
@@ -261,6 +262,43 @@ function SchemaPage() {
     },
   })
 
+  const seedMutation = useMutation({
+    mutationFn: async ({ tableName, count }: { tableName: string; count: number }) => {
+      if (!activeConnection) {
+        throw new Error('No active connection selected.')
+      }
+
+      const response = await fetch(
+        `/api/seed?connectionId=${activeConnection.id}&tableName=${encodeURIComponent(tableName)}&count=${count}`,
+        { method: 'POST' },
+      )
+
+      const result = (await response.json().catch(() => null)) as
+        | { success?: boolean; error?: string; inserted?: number }
+        | null
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error ?? 'Failed to seed table.')
+      }
+
+      return {
+        inserted: result.inserted ?? count,
+      }
+    },
+    onSuccess: async (result, variables) => {
+      toast.success(`Injected ${result.inserted} rows into ${variables.tableName}.`)
+      await queryClient.invalidateQueries({
+        queryKey: ['schema', activeConnection?.id],
+      })
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+
+      toast.error(message)
+      console.error('Failed to seed table:', message)
+    },
+  })
+
   const clearingTableName = clearTableMutation.isPending
     ? clearTableMutation.variables
     : null
@@ -268,6 +306,8 @@ function SchemaPage() {
   const isDroppingAllTables = dropAllTablesMutation.isPending
   const isRestoringDump = restoreDumpMutation.isPending
   const isDumping = dumpMutation.isPending
+  const isSeeding = seedMutation.isPending
+  const seedingTableName = isSeeding ? seedMutation.variables?.tableName : null
   const availableDumps = availableDumpsQuery.data ?? []
 
   if (!activeConnection) {
@@ -329,7 +369,8 @@ function SchemaPage() {
                 isWipingAllData ||
                 isDroppingAllTables ||
                 clearTableMutation.isPending ||
-                isRestoringDump
+                isRestoringDump ||
+                isSeeding
               }
               className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
             >
@@ -363,7 +404,8 @@ function SchemaPage() {
                 isWipingAllData ||
                 isDroppingAllTables ||
                 clearTableMutation.isPending ||
-                isRestoringDump
+                isRestoringDump ||
+                isSeeding
               }
               className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
             >
@@ -378,7 +420,8 @@ function SchemaPage() {
               isWipingAllData ||
               isDroppingAllTables ||
               clearTableMutation.isPending ||
-              isRestoringDump
+              isRestoringDump ||
+              isSeeding
             }
             onClick={() => {
               setIsRestoreModalOpen(true)
@@ -395,7 +438,8 @@ function SchemaPage() {
                 disabled={
                   wipeAllDataMutation.isPending ||
                   dropAllTablesMutation.isPending ||
-                  clearTableMutation.isPending
+                  clearTableMutation.isPending ||
+                  isSeeding
                 }
                 className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 flex items-center gap-2"
               >
@@ -433,7 +477,8 @@ function SchemaPage() {
                   dropAllTablesMutation.isPending ||
                   wipeAllDataMutation.isPending ||
                   clearTableMutation.isPending ||
-                  isRestoringDump
+                  isRestoringDump ||
+                  isSeeding
                 }
                 className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 flex items-center gap-2"
               >
@@ -564,6 +609,13 @@ function SchemaPage() {
         </div>
       ) : null}
 
+      {isSeeding ? (
+        <div className="flex items-center gap-3 bg-yellow-400 text-black p-4 border-2 border-black shadow-hardware">
+          <Loader2 className="animate-spin w-6 h-6" />
+          <p className="text-xl font-black uppercase tracking-widest">Injecting noise into {seedingTableName}...</p>
+        </div>
+      ) : null}
+
       {schemaError ? (
         <Card className="rounded-none border-4 border-red-600 bg-black text-red-500 shadow-hardware">
           <CardContent className="pt-6">
@@ -598,12 +650,59 @@ function SchemaPage() {
                     EXTRACT_CSV
                   </Button>
 
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={seedCounts[table.tableName] ?? '10'}
+                      onChange={(event) => {
+                        setSeedCounts((previous) => ({
+                          ...previous,
+                          [table.tableName]: event.target.value,
+                        }))
+                      }}
+                      className="w-20 bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-2 text-center text-sm shadow-hardware focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const rawCount = seedCounts[table.tableName] ?? '10'
+                        const parsedCount = Number(rawCount)
+                        const count = Number.isFinite(parsedCount) && parsedCount >= 1
+                          ? Math.min(Math.trunc(parsedCount), 1000)
+                          : 10
+
+                        seedMutation.mutate({
+                          tableName: table.tableName,
+                          count,
+                        })
+                      }}
+                      disabled={
+                        clearTableMutation.isPending ||
+                        isDroppingAllTables ||
+                        isWipingAllData ||
+                        isRestoringDump ||
+                        isDumping ||
+                        isSeeding
+                      }
+                      className="bg-yellow-400 text-black border-2 border-black shadow-hardware font-bold text-xs p-2 active:translate-y-[2px] active:shadow-none transition-all rounded-none"
+                    >
+                      {isSeeding && seedingTableName === table.tableName ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Dna className="w-3 h-3 mr-1" />
+                      )}
+                      INJECT_NOISE
+                    </Button>
+                  </div>
+
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         type="button"
                         size="sm"
-                        disabled={clearTableMutation.isPending || isDroppingAllTables}
+                        disabled={clearTableMutation.isPending || isDroppingAllTables || isSeeding}
                         className="rounded-none border-2 border-white shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 h-8 text-[10px]"
                       >
                         {clearingTableName === table.tableName ? 'WAIT' : 'CLEAR'}
