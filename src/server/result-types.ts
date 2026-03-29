@@ -1,3 +1,3 @@
 export type MessageServerFnResult =
-  | { success: true; message: string }
-  | { success: false; error: string };
+	| { success: true; message: string }
+	| { success: false; error: string };

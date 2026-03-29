@@ -1,1 +1,1 @@
-export const savedConnectionsQueryKey = ['saved-connections'] as const
+export const savedConnectionsQueryKey = ["saved-connections"] as const;

@@ -1,0 +1,12 @@
+[
+  {
+    "task": "Phase 0 - Initialization",
+    "status": "✅",
+    "details": "Scaffolded bun test setup and sanity checked the environment. Audited the codebase."
+  },
+  {
+    "task": "Task 1 - Audit ActiveConnectionProvider & Implement SSH Ping API",
+    "status": "✅",
+    "details": "Moved localStorage sync logic into setActiveConnection callback to fix hydration race conditions erasing credentials. Replaced previous testDatabaseConnection TanStack start fn with a proper /api/test-connection Rest endpoint wrapped in withTunnel. Verified with new unittests using JSDOM."
+  }
+]

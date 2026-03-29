@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SchemaRouteImport } from './routes/schema'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiTestConnectionRouteImport } from './routes/api/test-connection'
 import { Route as ApiSeedRouteImport } from './routes/api/seed'
 import { Route as ApiImportRouteImport } from './routes/api/import'
 import { Route as ApiExportSchemaRouteImport } from './routes/api/export-schema'
@@ -32,6 +33,11 @@ const ImportRoute = ImportRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTestConnectionRoute = ApiTestConnectionRouteImport.update({
+  id: '/api/test-connection',
+  path: '/api/test-connection',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSeedRoute = ApiSeedRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/api/export-schema': typeof ApiExportSchemaRoute
   '/api/import': typeof ApiImportRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/test-connection': typeof ApiTestConnectionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/api/export-schema': typeof ApiExportSchemaRoute
   '/api/import': typeof ApiImportRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/test-connection': typeof ApiTestConnectionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/api/export-schema': typeof ApiExportSchemaRoute
   '/api/import': typeof ApiImportRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/test-connection': typeof ApiTestConnectionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/api/export-schema'
     | '/api/import'
     | '/api/seed'
+    | '/api/test-connection'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/api/export-schema'
     | '/api/import'
     | '/api/seed'
+    | '/api/test-connection'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/api/export-schema'
     | '/api/import'
     | '/api/seed'
+    | '/api/test-connection'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   ApiExportSchemaRoute: typeof ApiExportSchemaRoute
   ApiImportRoute: typeof ApiImportRoute
   ApiSeedRoute: typeof ApiSeedRoute
+  ApiTestConnectionRoute: typeof ApiTestConnectionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/test-connection': {
+      id: '/api/test-connection'
+      path: '/api/test-connection'
+      fullPath: '/api/test-connection'
+      preLoaderRoute: typeof ApiTestConnectionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/seed': {
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiExportSchemaRoute: ApiExportSchemaRoute,
   ApiImportRoute: ApiImportRoute,
   ApiSeedRoute: ApiSeedRoute,
+  ApiTestConnectionRoute: ApiTestConnectionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
