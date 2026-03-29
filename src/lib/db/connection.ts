@@ -148,9 +148,11 @@ export const createConnection = (credentials: DbCredentials): SQL => {
 	});
 };
 
+// biome-ignore lint/suspicious/noExplicitAny: Kysely needs any for generic introspection
 export const getKyselyInstance = (credentials: DbCredentials): Kysely<any> => {
 	const connection = createConnection(credentials);
 
+	// biome-ignore lint/suspicious/noExplicitAny: Kysely needs any for generic introspection
 	return new Kysely<any>({
 		dialect: getDialect(credentials.driver, connection),
 	});

@@ -700,13 +700,12 @@ function App() {
 						</FormItem>
 
 						{status ? (
-							<div
+							<output
 								className={`border-4 p-4 font-black uppercase tracking-widest text-sm flex items-center justify-between ${
 									status.success
 										? "border-emerald-500 bg-emerald-500 text-black"
 										: "border-red-500 bg-red-500 text-white"
 								}`}
-								role="status"
 							>
 								<span>{status.message}</span>
 								{status.success ? (
@@ -714,7 +713,7 @@ function App() {
 								) : (
 									<RefreshCw className="w-5 h-5" />
 								)}
-							</div>
+							</output>
 						) : null}
 
 						<div className="flex gap-4 pt-6 mt-6 border-t-4 border-black dark:border-white">

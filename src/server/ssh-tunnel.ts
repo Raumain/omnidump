@@ -1,5 +1,5 @@
 import net from "node:net";
-import { Client } from "ssh2";
+import { Client, type ConnectConfig } from "ssh2";
 
 import type { DbCredentials } from "../lib/db/connection";
 
@@ -81,7 +81,7 @@ export const withTunnel = async <T>(
 
 		ssh.on("error", (err) => settleReject(err));
 
-		const sshConfig: any = {
+		const sshConfig: ConnectConfig = {
 			host: credentials.sshHost,
 			port: credentials.sshPort || 22,
 			username: credentials.sshUser,
