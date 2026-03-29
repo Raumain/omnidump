@@ -579,39 +579,59 @@ function SchemaPage() {
             <Card key={table.tableName} className="rounded-none border-2 border-black dark:border-white p-0 bg-zinc-50 dark:bg-zinc-950 shadow-hardware dark:shadow-hardware-dark flex flex-col h-full">
               <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 bg-black text-white p-4 border-b-2 border-black dark:border-white">
                 <CardTitle className="text-lg font-black uppercase tracking-widest truncate">{table.tableName}</CardTitle>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={clearTableMutation.isPending || isDroppingAllTables}
-                      className="rounded-none border-2 border-white shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 h-8 text-[10px]"
-                    >
-                      {clearingTableName === table.tableName ? 'WAIT' : 'CLEAR'}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
-                        <AlertTriangle className="w-6 h-6" /> Clear Data?
-                      </AlertDialogTitle>
-                      <AlertDialogDescription className="text-black dark:text-gray-300 font-bold">
-                        Delete ALL rows from {table.tableName}? Unrecoverable.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter className="mt-6">
-                      <AlertDialogCancel className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => {
-                          clearTableMutation.mutate(table.tableName)
-                        }}
-                        className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = `/api/export-csv?connectionId=${activeConnection.id}&tableName=${table.tableName}`
+                    }}
+                    disabled={
+                      clearTableMutation.isPending ||
+                      isDroppingAllTables ||
+                      isWipingAllData ||
+                      isRestoringDump ||
+                      isDumping
+                    }
+                    className="bg-zinc-200 dark:bg-zinc-800 border-2 border-black dark:border-white text-xs font-bold uppercase p-2 shadow-hardware active:translate-y-[2px] active:shadow-none transition-all rounded-none text-black dark:text-white"
+                  >
+                    <Download className="w-3 h-3 mr-1" />
+                    EXTRACT_CSV
+                  </Button>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={clearTableMutation.isPending || isDroppingAllTables}
+                        className="rounded-none border-2 border-white shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 h-8 text-[10px]"
                       >
-                        {clearingTableName === table.tableName ? 'Clearing...' : 'Confirm Clear'}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                        {clearingTableName === table.tableName ? 'WAIT' : 'CLEAR'}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+                          <AlertTriangle className="w-6 h-6" /> Clear Data?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-black dark:text-gray-300 font-bold">
+                          Delete ALL rows from {table.tableName}? Unrecoverable.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="mt-6">
+                        <AlertDialogCancel className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            clearTableMutation.mutate(table.tableName)
+                          }}
+                          className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
+                        >
+                          {clearingTableName === table.tableName ? 'Clearing...' : 'Confirm Clear'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </CardHeader>
               <CardContent className="p-4 flex-grow overflow-x-auto">
                 <ul className="space-y-1">
