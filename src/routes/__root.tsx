@@ -140,7 +140,7 @@ function InnerLayout() {
 
 	return (
 		<div className="relative min-h-screen flex flex-col font-mono text-foreground">
-			<div className="absolute inset-0 z-[-1] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px] animate-pan-slow opacity-50" />
+			<div className="absolute inset-0 z-[-1] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#27272a_1px,transparent_1px)] bg-size-[16px_16px] animate-pan-slow opacity-50" />
 
 			<header className="flex items-center justify-between p-4 border-b-4 border-black dark:border-white bg-background z-10 shrink-0">
 				<div className="flex items-center gap-6">
@@ -192,7 +192,7 @@ function InnerLayout() {
 							value={activeConnection?.id?.toString() || "none"}
 							onValueChange={handleConnectionChange}
 						>
-							<SelectTrigger className="w-[200px] border-2 border-black dark:border-white rounded-none shadow-hardware dark:shadow-hardware-dark font-bold bg-background text-foreground h-10 uppercase transition-all focus:ring-0 focus:ring-offset-0 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+							<SelectTrigger className="w-50 border-2 border-black dark:border-white rounded-none shadow-hardware dark:shadow-hardware-dark font-bold bg-background text-foreground h-10 uppercase transition-all focus:ring-0 focus:ring-offset-0 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
 								<SelectValue placeholder="Select Database" />
 							</SelectTrigger>
 							<SelectContent className="border-2 border-black dark:border-white rounded-none shadow-hardware dark:shadow-hardware-dark font-mono bg-background">
@@ -237,7 +237,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
 				<HeadContent />
 			</head>
-			<body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
+			<body className="font-sans antialiased wrap-anywhere selection:bg-[rgba(79,184,178,0.24)]">
 				<TanStackQueryProvider>
 					{children}
 					<Toaster />

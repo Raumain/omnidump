@@ -269,7 +269,7 @@ function App() {
 									<div className="flex items-start justify-between border-b-2 border-zinc-200 dark:border-zinc-800 pb-3 mb-4">
 										<div className="flex items-center gap-3">
 											<div
-												className={`w-3 h-3 rounded-full ${isActive ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" : "bg-red-500 max-w-[12px] min-w-[12px]"}`}
+												className={`w-3 h-3 rounded-full ${isActive ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" : "bg-red-500 max-w-3 min-w-3"}`}
 											/>
 											<p
 												className="font-black uppercase tracking-widest text-lg truncate"
@@ -305,14 +305,14 @@ function App() {
 													</AlertDialogDescription>
 												</AlertDialogHeader>
 												<AlertDialogFooter className="mt-6">
-													<AlertDialogCancel className="rounded-none border-2 border-black dark:border-white shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase">
+													<AlertDialogCancel className="rounded-none border-2 border-black dark:border-white shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase">
 														Cancel
 													</AlertDialogCancel>
 													<AlertDialogAction
 														onClick={() => {
 															void handleDeleteConnection(connection.id);
 														}}
-														className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
+														className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
 													>
 														Execute Deletion
 													</AlertDialogAction>
@@ -357,7 +357,7 @@ function App() {
 								<Button
 									type="button"
 									onClick={() => handleSelectConnection(connection)}
-									className={`w-full rounded-none border-2 border-black dark:border-white py-6 font-black uppercase tracking-widest text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.8)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all ${
+									className={`w-full rounded-none border-2 border-black dark:border-white py-6 font-black uppercase tracking-widest text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.8)] active:translate-y-0.5 active:translate-x-0.5 active:shadow-none transition-all ${
 										isActive
 											? "bg-orange-500 text-black hover:bg-orange-400"
 											: "bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700"
@@ -569,19 +569,19 @@ function App() {
 										<SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
 											<SelectItem
 												value="postgres"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
 											>
 												PostgreSQL
 											</SelectItem>
 											<SelectItem
 												value="mysql"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
 											>
 												MySQL
 											</SelectItem>
 											<SelectItem
 												value="sqlite"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:!bg-zinc-400 bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
 											>
 												SQLite
 											</SelectItem>
@@ -720,7 +720,7 @@ function App() {
 									testConnectionMutation.isPending ||
 									saveConnectionMutation.isPending
 								}
-								className="flex-1 rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-black uppercase text-sm tracking-widest bg-zinc-200 text-black hover:bg-zinc-300 h-16 py-4"
+								className="flex-1 rounded-none border-2 border-black shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-black uppercase text-sm tracking-widest bg-zinc-200 text-black hover:bg-zinc-300 h-16 py-4"
 							>
 								{testConnectionMutation.isPending
 									? "Probing..."
@@ -729,7 +729,7 @@ function App() {
 							<Button
 								type="button"
 								variant="secondary"
-								className="flex-[2] rounded-none border-4 border-black shadow-hardware active:translate-x-[4px] active:translate-y-[4px] active:shadow-none font-black uppercase text-lg tracking-widest bg-orange-500 text-black hover:bg-orange-400 h-16 py-4 flex items-center gap-3"
+								className="flex-2 rounded-none border-4 border-black shadow-hardware active:translate-x-1 active:translate-y-1 active:shadow-none font-black uppercase text-lg tracking-widest bg-orange-500 text-black hover:bg-orange-400 h-16 py-4 flex items-center gap-3"
 								disabled={
 									saveConnectionMutation.isPending ||
 									testConnectionMutation.isPending
