@@ -212,15 +212,12 @@ function App() {
 	const handleSubmit = (event: SubmitEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		console.log(credentials);
-
 		testConnectionMutation.mutate(credentials, {
 			onSuccess: (response) => {
 				if (response.success) {
 					setStatus({ success: true, message: response.message });
 					return;
 				}
-				console.log(response);
 				setStatus({ success: false, message: response.error });
 			},
 		});

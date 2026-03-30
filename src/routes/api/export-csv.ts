@@ -28,7 +28,6 @@ const toCsvCell = (value: unknown): string => {
 
 	if (/[",\n;]/.test(formattedValue)) {
 		formattedValue = `"${formattedValue.replace(/"/g, '""')}"`;
-		console.log(formattedValue);
 	}
 
 	return formattedValue;

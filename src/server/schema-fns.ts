@@ -190,7 +190,6 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
 				normalizedCredentials,
 				async (tunneledCreds) => {
 					const db = getKyselyInstance(tunneledCreds);
-					console.log(tunneledCreds);
 
 					try {
 						return await db.introspection.getTables();

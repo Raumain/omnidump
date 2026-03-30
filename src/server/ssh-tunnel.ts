@@ -88,14 +88,12 @@ export const withTunnel = async <T>(
 		};
 
 		if (credentials.sshPrivateKey) {
-			console.log("nok");
 			sshConfig.privateKey = credentials.sshPrivateKey;
 
 			if (credentials.sshPassword) {
 				sshConfig.passphrase = credentials.sshPassword;
 			}
 		} else if (credentials.sshPassword) {
-			console.log("ok");
 			sshConfig.password = credentials.sshPassword;
 		}
 
