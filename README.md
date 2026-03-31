@@ -1,50 +1,73 @@
-# OmniDump 🚀
+# 🐘 OmniDump
 
-OmniDump est un DevTool full-stack et auto-hébergé conçu pour les développeurs et data engineers. Il permet de gérer des bases de données relationnelles, d'extraire des schémas, de réaliser des dumps SQL et d'importer visuellement des fichiers CSV massifs grâce à un moteur de streaming haute performance.
+OmniDump is a lightning-fast, self-hosted database management and ETL (Extract, Transform, Load) DevTool. Built with **Bun**, **React**, and **TanStack Start**, it provides a seamless interface to manage, dump, and restore your databases directly from your browser.
 
-Fini les crashs de RAM sur des imports de plusieurs gigaoctets. Fini les lignes de commande obscures pour mapper un fichier plat vers une table SQL complexe.
+## ✨ Why OmniDump?
 
-## ✨ Fonctionnalités Principales
+* **📦 Zero Host Dependencies:** The Docker image ships with native `pg_dump`, `mysql`, `sqlite3`, and `openssh-client` binaries. It works out of the box, regardless of your host OS.
+* **🔒 Native SSH Tunneling:** Securely connect to remote, firewalled databases through built-in SSH tunneling without opening public ports.
+* **⚡ Blazing Fast SSR:** Powered by Bun and a highly optimized React Server-Side Rendered frontend for instant interactions.
+* **🗄️ Self-Hosted & Private:** Your database credentials and dumps never leave your infrastructure.
 
-- **Gestionnaire de Connexions :** Basculez instantanément entre vos bases PostgreSQL, MySQL et SQLite.
-- **Explorateur de Schéma Visuel :** Introspection des bases de données pour visualiser les tables, colonnes et types en temps réel.
-- **Moteur d'E/S en Streaming (Zéro Crash) :** Import et Export de dumps SQL massifs traités par lots (chunks) sans saturer la mémoire du serveur.
-- **Mapping CSV Dynamique :** Interface drag-and-drop pour charger un CSV, visualiser un échantillon de données, et relier visuellement les colonnes du fichier aux colonnes de votre base cible.
-- **Haute Performance :** Construit sur le runtime Bun, utilisant des I/O natives et des requêtes SQL optimisées.
+---
 
-## 🛠 Stack Technique
+## 🚀 Quick Start (Recommended)
 
-OmniDump utilise une architecture moderne, orientée sur la performance brute et l'inférence de types :
+The cleanest and most reliable way to run OmniDump is using **Docker Compose**. 
 
-- **Runtime & DB Driver :** [Bun](https://bun.sh/) (API native `bun:sql` sans pilotes externes).
-- **Framework Full-Stack :** [TanStack Start](https://tanstack.com/start) (React, Server Functions, SSR).
-- **Introspection & Query Builder :** [Kysely](https://kysely.dev/).
-- **Traitement de données :** `csv-parse` couplé aux Web Streams API.
-- **Interface Utilisateur :** TailwindCSS, shadcn/ui, TanStack Table.
-- **Qualité & Git :** Biome (Linter/Formatter), Husky (Pre-commit hooks).
+Create a `compose.yml` file:
 
-## 🐳 Démarrage Rapide (Développement)
+```yaml
+services:
+  omnidump:
+    image: your-dockerhub-username/omnidump:latest
+    container_name: omnidump
+    init: true
+    ports:
+      - "5555:3000"
+    volumes:
+      - omnidump_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
-Le développement d'OmniDump est strictement encapsulé dans un **DevContainer** Docker pour garantir un environnement stérile et reproductible.
-
-1. Clonez le dépôt :
-   ```bash
-   git clone [https://github.com/votre-nom/omnidump.git](https://github.com/votre-nom/omnidump.git)
-   cd omnidump
-2. Ouvrez le dossier dans VS Code ou Cursor.
-3. Installer les dépendences 
-```bash
-bun install
-```
-4. Lancer le serveur de développement
-```bash
-bun dev
+volumes:
+  omnidump_data:
 ```
 
-## Déploiement (Auto-hébergement)
+Then, start the application:
+```bash
+docker compose up -d
+```
+Access the dashboard at `http://localhost:5555`.
 
-(À venir) Un fichier docker-compose.yml sera fourni pour déployer OmniDump avec une image Alpine ultra-légère.
+---
 
-## 📜 Licence
+## 🛠️ Standalone Docker Run
 
-MIT License
+If you prefer using the Docker CLI directly, use the following command:
+
+```bash
+docker run -d \
+  --name omnidump \
+  -p 3000:3000 \
+  -v omnidump_data:/app/data \
+  --add-host=host.docker.internal:host-gateway \
+  your-dockerhub-username/omnidump:latest
+```
+
+---
+
+## 🧠 Understanding the Configuration
+
+To keep the application robust and secure, we enforce a few specific Docker parameters. Here is exactly why they are required:
+
+### 1. The Data Volume (`-v omnidump_data:/app/data`)
+OmniDump uses an embedded SQLite database to save your configuration, connection strings, and UI preferences. 
+* **Why it's needed:** Docker containers are ephemeral by nature. Without mounting this volume, every time you update or restart the container, all your saved database connections would be permanently deleted.
+
+### 2. The Network Bridge (`--add-host=host.docker.internal:host-gateway`)
+* **Why it's needed:** If you are testing OmniDump with a local database hosted directly on your machine (e.g., a local Postgres running on port 5432), the container cannot reach it using `localhost` (which refers to the container's own internal network). This flag creates a bridge, allowing OmniDump to securely communicate with your host machine using the `host.docker.internal` URL.
+
+### 3. The Init Flag (`init: true` in Compose)
+* **Why it's needed:** Node and Bun environments running as PID 1 in Docker do not inherently process system shutdown signals (`SIGINT`/`SIGTERM`). The `init` flag wraps the process in a lightweight signal handler. This ensures that when you hit `CTRL+C` or run `docker stop`, OmniDump instantly and gracefully closes its database connections, preventing SQLite corruption.
