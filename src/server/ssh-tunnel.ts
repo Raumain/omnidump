@@ -284,9 +284,6 @@ const waitForTunnelReadiness = async (
 	void monitorExit();
 	void monitorStderr();
 
-	
-	
-	
 	try {
 		await Promise.race([pollUntilReady(), failFastPromise]);
 	} finally {
