@@ -145,6 +145,7 @@ export const createConnection = (credentials: DbCredentials): SQL => {
 		user: credentials.user,
 		password: credentials.password,
 		database: credentials.database,
+		tls: credentials.useSsh ? false : undefined,
 	});
 };
 
