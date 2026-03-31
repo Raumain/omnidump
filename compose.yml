@@ -3,7 +3,7 @@ services:
     image: omnidump:latest
     init: true
     ports:
-      - "3000:3000"
+      - "5555:3000"
     volumes:
       - omnidump_data:/app/data
     extra_hosts:
