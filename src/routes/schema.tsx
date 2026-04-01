@@ -420,7 +420,7 @@ function SchemaPage() {
 						>
 							<a
 								href={`/api/export-schema?connectionId=${activeConnection.id}&format=${schemaExportFormat}`}
-								className=" hover:bg-neutral-600!"
+								className=" hover:bg-neutral-600! text-foreground!"
 							>
 								Export Schema
 							</a>
