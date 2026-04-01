@@ -10,6 +10,13 @@ Bun.serve({
 	async fetch(req) {
 		const url = new URL(req.url);
 
+		if (
+			url.pathname.startsWith("/api") ||
+			url.pathname.startsWith("/_serverFn")
+		) {
+			return handler.fetch(req);
+		}
+
 		if (url.pathname !== "/") {
 			const staticFilePath = join(clientDir, url.pathname);
 			const file = Bun.file(staticFilePath);

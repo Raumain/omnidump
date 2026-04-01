@@ -36,6 +36,9 @@ COPY --chown=bun:bun --from=build /app/dist ./dist
 COPY --chown=bun:bun --from=build /app/src ./src
 COPY --chown=bun:bun --from=build /app/package.json ./package.json
 
+RUN mkdir /app/data /app/exports
+RUN chown bun:bun /app/data /app/exports
+
 # Create app data directory and set permissions
 RUN mkdir -p /app/data && chown bun:bun /app/data
 

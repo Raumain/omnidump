@@ -103,22 +103,23 @@ const buildCommandArgs = (
 export const Route = createFileRoute("/api/dump" as never)({
 	server: {
 		handlers: {
-			GET: async ({ request }) => {
+			POST: async ({ request }) => {
 				try {
 					const { getSavedConnectionById } = await import(
 						"../../server/saved-connections"
 					);
 
-					const url = new URL(request.url);
-					const connectionIdParam = url.searchParams.get("connectionId");
-					const dumpTypeParam = url.searchParams.get("dumpType");
+					const body = await request.json().catch(() => ({}));
+					const connectionIdParam = body.connectionId;
+					const dumpTypeParam = body.type;
+
 					const connectionId = Number(connectionIdParam);
 					const dumpType: DumpType = isDumpType(dumpTypeParam)
 						? dumpTypeParam
 						: "both";
 
 					if (!connectionIdParam || Number.isNaN(connectionId)) {
-						return new Response("Invalid connectionId query parameter.", {
+						return new Response("Invalid connectionId in body.", {
 							status: 400,
 						});
 					}
@@ -152,9 +153,9 @@ export const Route = createFileRoute("/api/dump" as never)({
 
 					if (exitCode !== 0) {
 						const errorText = await new Response(proc.stderr).text();
-						const file = Bun.file(filePath);
+						const fileCheck = Bun.file(filePath);
 
-						if ((await file.exists()) && file.size === 0) {
+						if ((await fileCheck.exists()) && fileCheck.size === 0) {
 							rmSync(filePath, { force: true });
 						}
 

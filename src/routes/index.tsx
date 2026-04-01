@@ -82,8 +82,6 @@ function App() {
 		},
 	});
 
-	// Using the new explicit API route because SSH Tunneling functions (like ssh2)
-	// sometimes struggle within TanStack Start's generic createServerFn bundle.
 	const testConnectionMutation = useMutation({
 		mutationFn: async (credentials: DbCredentials) => {
 			const response = await fetch("/api/test-connection", {
@@ -225,33 +223,33 @@ function App() {
 
 	return (
 		<section className="mx-auto flex w-full max-w-6xl flex-col gap-6 font-mono pb-12">
-			<div className="border-b-4 border-black dark:border-white pb-4 mb-8">
-				<h1 className="text-3xl font-black uppercase tracking-widest text-foreground">
+			<div className="border-b-2 border-border pb-4 mb-8">
+				<h1 className="text-3xl font-black uppercase tracking-widest text-primary">
 					SYSTEM_PATCHBAY
 				</h1>
-				<p className="text-sm font-bold uppercase tracking-widest text-zinc-500 mt-2">
+				<p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-2">
 					Global Routing & Connection Matrix
 				</p>
 			</div>
 
 			<div className="w-full">
 				<div className="flex items-center justify-between mb-6">
-					<h2 className="text-xl font-black uppercase tracking-widest">
+					<h2 className="text-xl font-black uppercase tracking-widest text-foreground">
 						Active Nodes ({savedConnections.length})
 					</h2>
 				</div>
 
 				{savedConnectionsQuery.isLoading ? (
-					<div className="flex justify-center p-12 border-2 border-dashed border-zinc-400 bg-zinc-50 dark:bg-zinc-900">
-						<p className="text-sm font-bold uppercase animate-pulse tracking-widest">
+					<div className="flex justify-center p-12 border-2 border-dashed border-border bg-card">
+						<p className="text-sm font-bold uppercase animate-pulse tracking-widest text-primary">
 							Scanning network...
 						</p>
 					</div>
 				) : null}
 
 				{!savedConnectionsQuery.isLoading && savedConnections.length === 0 ? (
-					<div className="flex justify-center p-12 border-2 border-dashed border-zinc-400 bg-zinc-50 dark:bg-zinc-900">
-						<p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
+					<div className="flex justify-center p-12 border-2 border-dashed border-border bg-card">
+						<p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
 							NO NODES DETECTED. INITIALIZE A NEW CONNECTION BELOW.
 						</p>
 					</div>
@@ -263,16 +261,16 @@ function App() {
 						return (
 							<div
 								key={connection.id}
-								className={`bg-background border-2 border-black dark:border-white p-5 transition-transform hover:-translate-y-1 flex flex-col justify-between h-full group ${isActive ? "shadow-[4px_4px_0px_0px_#f97316] border-orange-500 dark:border-orange-500" : "shadow-hardware dark:shadow-hardware-dark"}`}
+								className={`bg-card border-2 p-5 flex flex-col justify-between h-full group transition-none ${isActive ? "border-primary shadow-hardware" : "border-border shadow-hardware dark:shadow-hardware hover:border-primary"}`}
 							>
 								<div>
-									<div className="flex items-start justify-between border-b-2 border-zinc-200 dark:border-zinc-800 pb-3 mb-4">
+									<div className="flex items-start justify-between border-b-2 border-border pb-3 mb-4">
 										<div className="flex items-center gap-3">
 											<div
-												className={`w-3 h-3 rounded-full ${isActive ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" : "bg-red-500 max-w-3 min-w-3"}`}
+												className={`w-3 h-3 ${isActive ? "bg-primary shadow-[0_0_8px_rgba(255,150,0,0.8)] animate-pulse" : "bg-destructive"}`}
 											/>
 											<p
-												className="font-black uppercase tracking-widest text-lg truncate"
+												className="font-black uppercase tracking-widest text-lg truncate text-foreground"
 												title={connection.name}
 											>
 												{connection.name}
@@ -286,33 +284,33 @@ function App() {
 													size="icon"
 													aria-label={`Delete ${connection.name}`}
 													disabled={deleteConnectionMutation.isPending}
-													className="rounded-none hover:bg-red-100 hover:text-red-600 text-zinc-400 h-8 w-8"
+													className="rounded-none hover:bg-destructive/20 hover:text-destructive text-muted-foreground h-8 w-8 border-2 border-transparent hover:border-destructive"
 												>
 													<Trash2 className="w-4 h-4" />
 												</Button>
 											</AlertDialogTrigger>
-											<AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
-												<AlertDialogHeader>
-													<AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+											<AlertDialogContent className="rounded-none border-4 border-destructive bg-card shadow-hardware font-mono p-0 max-w-md">
+												<AlertDialogHeader className="p-6 pb-4">
+													<AlertDialogTitle className="text-2xl font-black uppercase text-destructive flex items-center gap-2">
 														<Trash2 className="w-6 h-6" /> Terminate Node?
 													</AlertDialogTitle>
 													<AlertDialogDescription className="text-foreground font-bold uppercase tracking-widest">
 														INITIATE DELETION SEQUENCE FOR NODE:{" "}
-														<span className="text-red-600 font-black">
+														<span className="text-destructive font-black">
 															{connection.name}
 														</span>
 														?
 													</AlertDialogDescription>
 												</AlertDialogHeader>
-												<AlertDialogFooter className="mt-6">
-													<AlertDialogCancel className="rounded-none border-2 border-black dark:border-white shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase">
+												<AlertDialogFooter className="p-4 border-t-2 border-destructive bg-secondary flex gap-3">
+													<AlertDialogCancel className="flex-1 rounded-none border-2 border-border bg-secondary text-secondary-foreground shadow-hardware dark:shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase transition-none">
 														Cancel
 													</AlertDialogCancel>
 													<AlertDialogAction
 														onClick={() => {
 															void handleDeleteConnection(connection.id);
 														}}
-														className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
+														className="flex-1 rounded-none border-2 border-destructive bg-destructive text-white shadow-hardware hover:bg-[#CC0000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase transition-none"
 													>
 														Execute Deletion
 													</AlertDialogAction>
@@ -323,29 +321,29 @@ function App() {
 
 									<div className="space-y-2 mb-6">
 										<div className="flex items-center justify-between text-xs font-bold uppercase">
-											<span className="text-zinc-500">DRIVER</span>
-											<span className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 border border-zinc-300 dark:border-zinc-700">
+											<span className="text-muted-foreground">DRIVER</span>
+											<span className="bg-secondary text-foreground px-2 py-1 border border-border">
 												{connection.driver ?? "UNKNOWN"}
 											</span>
 										</div>
 										<div className="flex items-center justify-between text-xs font-bold uppercase">
-											<span className="text-zinc-500">HOST</span>
-											<span className="truncate max-w-[60%]">
+											<span className="text-muted-foreground">HOST</span>
+											<span className="truncate max-w-[60%] text-foreground">
 												{connection.host || "LOCALHOST"}
 											</span>
 										</div>
 										{connection.database_name && (
 											<div className="flex items-center justify-between text-xs font-bold uppercase">
-												<span className="text-zinc-500">DB</span>
-												<span className="truncate max-w-[60%]">
+												<span className="text-muted-foreground">DB</span>
+												<span className="truncate max-w-[60%] text-foreground">
 													{connection.database_name}
 												</span>
 											</div>
 										)}
 										{Boolean(connection.use_ssh) && (
 											<div className="flex items-center justify-between text-xs font-bold uppercase">
-												<span className="text-zinc-500">SECURITY</span>
-												<span className="inline-flex items-center gap-1 bg-yellow-300 text-black px-2 py-1 border border-black dark:border-white font-mono">
+												<span className="text-muted-foreground">SECURITY</span>
+												<span className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-2 py-1 border border-primary font-mono">
 													<Shield className="w-3 h-3" />
 													[SSH_SECURED]
 												</span>
@@ -357,11 +355,8 @@ function App() {
 								<Button
 									type="button"
 									onClick={() => handleSelectConnection(connection)}
-									className={`w-full rounded-none border-2 border-black dark:border-white py-6 font-black uppercase tracking-widest text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.8)] active:translate-y-0.5 active:translate-x-0.5 active:shadow-none transition-all ${
-										isActive
-											? "bg-orange-500 text-black hover:bg-orange-400"
-											: "bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700"
-									}`}
+									variant={isActive ? "accent" : "default"}
+									className="w-full py-6 text-sm tracking-widest"
 								>
 									{isActive ? (
 										<span className="flex items-center gap-2">
@@ -377,10 +372,10 @@ function App() {
 				</div>
 			</div>
 
-			<div className="bg-zinc-50 dark:bg-zinc-950 border-2 border-black dark:border-white p-8 shadow-hardware mt-12 w-full max-w-2xl mx-auto">
-				<div className="mb-6 border-b-4 border-black dark:border-white pb-4">
-					<h2 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3">
-						<Plus className="w-6 h-6 border-2 border-black bg-zinc-200" />
+			<div className="bg-card border-2 border-border p-8 shadow-hardware mt-12 w-full max-w-2xl mx-auto">
+				<div className="mb-6 border-b-2 border-border pb-4">
+					<h2 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3 text-foreground">
+						<Plus className="w-6 h-6 border-2 border-border bg-secondary" />
 						INITIALIZE_NEW_NODE
 					</h2>
 				</div>
@@ -388,7 +383,7 @@ function App() {
 				<Form onSubmit={handleSubmit}>
 					<div className="space-y-5">
 						<FormItem>
-							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 								Connection Alias
 							</FormLabel>
 							<FormControl>
@@ -398,14 +393,14 @@ function App() {
 									onChange={(event) => {
 										setConnectionName(event.target.value);
 									}}
-									className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold uppercase focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+									className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold uppercase text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 									placeholder="LOCAL_DEV_DB"
 								/>
 							</FormControl>
 						</FormItem>
 
 						<FormItem>
-							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 								Secure Tunnel
 							</FormLabel>
 							<FormControl>
@@ -418,10 +413,10 @@ function App() {
 											sshPort: prev.sshPort ?? 22,
 										}));
 									}}
-									className={`w-full border-2 border-black dark:border-white p-2 font-bold uppercase cursor-pointer flex items-center gap-2 justify-between ${
+									className={`w-full border-2 p-2 font-bold uppercase cursor-pointer flex items-center gap-2 justify-between transition-none ${
 										credentials.useSsh
-											? "bg-orange-500 text-black"
-											: "bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+											? "border-primary bg-primary text-primary-foreground"
+											: "border-border bg-secondary text-muted-foreground"
 									}`}
 									aria-pressed={Boolean(credentials.useSsh)}
 								>
@@ -429,7 +424,7 @@ function App() {
 										<Shield className="w-4 h-4" />
 										ENABLE_SECURE_TUNNEL (SSH)
 									</span>
-									<span className="text-[10px] tracking-widest border border-black dark:border-white px-2 py-1">
+									<span className="text-[10px] tracking-widest border border-current px-2 py-1">
 										{credentials.useSsh ? "ON" : "OFF"}
 									</span>
 								</button>
@@ -437,14 +432,14 @@ function App() {
 						</FormItem>
 
 						{credentials.useSsh ? (
-							<div className="ml-4 border-l-4 border-black dark:border-white pl-4 py-2 space-y-4 bg-zinc-100/50 dark:bg-zinc-900/40">
-								<p className="text-xs font-black uppercase tracking-widest text-zinc-500">
+							<div className="ml-4 border-l-2 border-primary pl-4 py-2 space-y-4 bg-secondary/50">
+								<p className="text-xs font-black uppercase tracking-widest text-primary">
 									SSH_MODULE
 								</p>
 
 								<div className="grid grid-cols-3 gap-4">
 									<FormItem className="col-span-2">
-										<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+										<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 											SSH_HOST
 										</FormLabel>
 										<FormControl>
@@ -458,13 +453,13 @@ function App() {
 													}));
 												}}
 												placeholder="bastion.example.com"
-												className="bg-zinc-100 dark:bg-zinc-900 border-2 border-black dark:border-white rounded-none p-2 font-mono text-sm focus:ring-2 focus:ring-orange-500"
+												className="bg-secondary border-2 border-border rounded-none p-2 font-mono text-sm text-foreground focus:border-primary"
 											/>
 										</FormControl>
 									</FormItem>
 
 									<FormItem className="col-span-1">
-										<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+										<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 											SSH_PORT
 										</FormLabel>
 										<FormControl>
@@ -480,14 +475,14 @@ function App() {
 													}));
 												}}
 												placeholder="22"
-												className="bg-zinc-100 dark:bg-zinc-900 border-2 border-black dark:border-white rounded-none p-2 font-mono text-sm focus:ring-2 focus:ring-orange-500"
+												className="bg-secondary border-2 border-border rounded-none p-2 font-mono text-sm text-foreground focus:border-primary"
 											/>
 										</FormControl>
 									</FormItem>
 								</div>
 
 								<FormItem>
-									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 										SSH_USER
 									</FormLabel>
 									<FormControl>
@@ -501,13 +496,13 @@ function App() {
 												}));
 											}}
 											placeholder="deploy"
-											className="bg-zinc-100 dark:bg-zinc-900 border-2 border-black dark:border-white rounded-none p-2 font-mono text-sm focus:ring-2 focus:ring-orange-500"
+											className="bg-secondary border-2 border-border rounded-none p-2 font-mono text-sm text-foreground focus:border-primary"
 										/>
 									</FormControl>
 								</FormItem>
 
 								<FormItem>
-									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 										SSH_PASSWORD_OR_PASSPHRASE
 									</FormLabel>
 									<FormControl>
@@ -521,13 +516,13 @@ function App() {
 												}));
 											}}
 											placeholder="••••••••"
-											className="bg-zinc-100 dark:bg-zinc-900 border-2 border-black dark:border-white rounded-none p-2 font-mono text-sm focus:ring-2 focus:ring-orange-500"
+											className="bg-secondary border-2 border-border rounded-none p-2 font-mono text-sm text-foreground focus:border-primary"
 										/>
 									</FormControl>
 								</FormItem>
 
 								<FormItem>
-									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+									<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 										SSH_PRIVATE_KEY
 									</FormLabel>
 									<FormControl>
@@ -541,7 +536,7 @@ function App() {
 											}}
 											placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
 											rows={6}
-											className="w-full bg-zinc-100 dark:bg-zinc-900 border-2 border-black dark:border-white rounded-none p-2 font-mono text-xs focus:ring-2 focus:ring-orange-500"
+											className="w-full bg-secondary border-2 border-border rounded-none p-2 font-mono text-xs text-foreground focus:border-primary focus:outline-none"
 										/>
 									</FormControl>
 								</FormItem>
@@ -549,11 +544,11 @@ function App() {
 						) : null}
 
 						<FormItem>
-							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 								Driver
 							</FormLabel>
 							<FormControl>
-								<div className="border-2 border-black bg-white shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)] text-black">
+								<div className="border-2 border-border bg-secondary">
 									<Select
 										value={credentials.driver}
 										onValueChange={(value) => {
@@ -563,25 +558,25 @@ function App() {
 											}));
 										}}
 									>
-										<SelectTrigger className="w-full h-12 bg-transparent border-0 rounded-none font-bold uppercase focus:ring-0">
+										<SelectTrigger className="w-full h-12 bg-transparent border-0 rounded-none font-bold uppercase text-foreground focus:ring-0">
 											<SelectValue placeholder="Select driver" />
 										</SelectTrigger>
-										<SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+										<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
 											<SelectItem
 												value="postgres"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer text-sm py-2"
 											>
 												PostgreSQL
 											</SelectItem>
 											<SelectItem
 												value="mysql"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer text-sm py-2"
 											>
 												MySQL
 											</SelectItem>
 											<SelectItem
 												value="sqlite"
-												className="font-bold uppercase rounded-none focus:bg-zinc-200 hover:bg-zinc-400! bg-white text-black cursor-pointer text-sm py-2"
+												className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer text-sm py-2"
 											>
 												SQLite
 											</SelectItem>
@@ -593,7 +588,7 @@ function App() {
 
 						<div className="grid grid-cols-3 gap-4">
 							<FormItem className="col-span-2">
-								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 									Host
 								</FormLabel>
 								<FormControl>
@@ -607,13 +602,13 @@ function App() {
 											}));
 										}}
 										placeholder="localhost"
-										className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+										className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 									/>
 								</FormControl>
 							</FormItem>
 
 							<FormItem className="col-span-1">
-								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 									Port
 								</FormLabel>
 								<FormControl>
@@ -628,7 +623,7 @@ function App() {
 											}));
 										}}
 										placeholder="5432"
-										className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+										className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 									/>
 								</FormControl>
 							</FormItem>
@@ -636,7 +631,7 @@ function App() {
 
 						<div className="grid grid-cols-2 gap-4">
 							<FormItem>
-								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 									Auth User
 								</FormLabel>
 								<FormControl>
@@ -650,13 +645,13 @@ function App() {
 											}));
 										}}
 										placeholder="root"
-										className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+										className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 									/>
 								</FormControl>
 							</FormItem>
 
 							<FormItem>
-								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+								<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 									Auth Token
 								</FormLabel>
 								<FormControl>
@@ -670,14 +665,14 @@ function App() {
 											}));
 										}}
 										placeholder="••••••••"
-										className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+										className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 									/>
 								</FormControl>
 							</FormItem>
 						</div>
 
 						<FormItem>
-							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-zinc-500">
+							<FormLabel className="text-xs font-black tracking-widest mb-1 block uppercase text-muted-foreground">
 								Target Database
 							</FormLabel>
 							<FormControl>
@@ -691,7 +686,7 @@ function App() {
 										}));
 									}}
 									placeholder="database_name"
-									className="bg-white dark:bg-black border-2 border-black dark:border-white rounded-none p-3 h-12 font-bold focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-orange-500 shadow-[inset_2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+									className="bg-secondary border-2 border-border rounded-none p-3 h-12 font-bold text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary"
 								/>
 							</FormControl>
 						</FormItem>
@@ -700,8 +695,8 @@ function App() {
 							<output
 								className={`border-4 p-4 font-black uppercase tracking-widest text-sm flex items-center justify-between ${
 									status.success
-										? "border-emerald-500 bg-emerald-500 text-black"
-										: "border-red-500 bg-red-500 text-white"
+										? "border-primary bg-primary text-primary-foreground"
+										: "border-destructive bg-destructive text-white"
 								}`}
 							>
 								<span>{status.message}</span>
@@ -713,14 +708,14 @@ function App() {
 							</output>
 						) : null}
 
-						<div className="flex gap-4 pt-6 mt-6 border-t-4 border-black dark:border-white">
+						<div className="flex gap-4 pt-6 mt-6 border-t-2 border-border">
 							<Button
 								type="submit"
 								disabled={
 									testConnectionMutation.isPending ||
 									saveConnectionMutation.isPending
 								}
-								className="flex-1 rounded-none border-2 border-black shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-black uppercase text-sm tracking-widest bg-zinc-200 text-black hover:bg-zinc-300 h-16 py-4"
+								className="flex-1 h-16 py-4"
 							>
 								{testConnectionMutation.isPending
 									? "Probing..."
@@ -728,8 +723,8 @@ function App() {
 							</Button>
 							<Button
 								type="button"
-								variant="secondary"
-								className="flex-2 rounded-none border-4 border-black shadow-hardware active:translate-x-1 active:translate-y-1 active:shadow-none font-black uppercase text-lg tracking-widest bg-orange-500 text-black hover:bg-orange-400 h-16 py-4 flex items-center gap-3"
+								variant="accent"
+								className="flex-2 h-16 py-4 text-lg flex items-center gap-3"
 								disabled={
 									saveConnectionMutation.isPending ||
 									testConnectionMutation.isPending

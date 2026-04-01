@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -9,6 +9,7 @@
 
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --animate-pan-slow: pan 60s linear infinite;
   @keyframes pan {
@@ -16,8 +17,9 @@
     100% { background-position: 100% 100%; }
   }
 
-  --shadow-hardware: 4px 4px 0px 0px rgba(0,0,0,1);
-  --shadow-hardware-dark: 4px 4px 0px 0px rgba(255,255,255,0.8);
+  --shadow-hardware: 3px 3px 0px 0px #111111;
+  --shadow-hardware-sm: 2px 2px 0px 0px #111111;
+  --shadow-hardware-lg: 4px 4px 0px 0px #111111;
 }
 
 :root {
@@ -180,7 +182,7 @@ a {
 }
 
 a:hover {
-  color: #246f76;
+  color: #ffa621;
 }
 
 code {
@@ -352,37 +354,40 @@ a {
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Tactile Hardware palette - Teenage Engineering OP-1/TX-6 inspired (matte, premium) */
+  --background: #1C1C1E;
+  --foreground: #F3F4F6;
+  --card: #2C2C2E;
+  --card-foreground: #F3F4F6;
+  --popover: #2C2C2E;
+  --popover-foreground: #F3F4F6;
+  /* Matte functional accent colors */
+  --primary: #F97316;
+  --primary-foreground: #1C1C1E;
+  --secondary: #3F3F46;
+  --secondary-foreground: #F3F4F6;
+  --muted: #3F3F46;
+  --muted-foreground: #9CA3AF;
+  --accent: #3B82F6;
+  --accent-foreground: #F3F4F6;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #3F3F46;
+  --input: #3F3F46;
+  --ring: #F97316;
+  --chart-1: #F97316;
+  --chart-2: #3B82F6;
+  --chart-3: #22C55E;
+  --chart-4: #EAB308;
+  --chart-5: #EF4444;
+  --sidebar: #1C1C1E;
+  --sidebar-foreground: #F3F4F6;
+  --sidebar-primary: #F97316;
+  --sidebar-primary-foreground: #1C1C1E;
+  --sidebar-accent: #3F3F46;
+  --sidebar-accent-foreground: #F3F4F6;
+  --sidebar-border: #3F3F46;
+  --sidebar-ring: #F97316;
 }
 
 @layer base {
@@ -394,5 +399,62 @@ a {
   }
   html {
     @apply font-sans;
+  }
+
+  /* Tactile Hardware dark mode */
+  .dark {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  .dark body {
+    background-color: #1C1C1E;
+    position: relative;
+  }
+
+  /* Animated dot grid background - subtle "powered on" state */
+  .dark body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: radial-gradient(circle, #3F3F46 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 60s linear infinite;
+  }
+
+  @keyframes drift {
+    0% {
+      transform: translate(0, 0);
+    }
+    100% {
+      transform: translate(-24px, -24px);
+    }
+  }
+
+  /* Hardware shadow utilities - dark grey for smooth premium feel */
+  .dark .shadow-hardware {
+    box-shadow: 3px 3px 0px 0px #111111;
+  }
+
+  .dark .shadow-hardware-sm {
+    box-shadow: 2px 2px 0px 0px #111111;
+  }
+
+  .dark .shadow-hardware-lg {
+    box-shadow: 4px 4px 0px 0px #111111;
+  }
+
+  /* Accent shadows for emphasis */
+  .dark .shadow-hard-accent {
+    box-shadow: 3px 3px 0px 0px #111111;
+  }
+
+  .dark .shadow-hard-destructive {
+    box-shadow: 3px 3px 0px 0px #111111;
   }
 }

@@ -11,6 +11,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TerminalSquare } from "lucide-react";
 import { useEffect } from "react";
+import { toast } from "sonner";
 import {
 	Select,
 	SelectContent,
@@ -101,6 +102,9 @@ function InnerLayout() {
 				savedConnections.map((c) => c.id),
 			);
 			setActiveConnection(null);
+			toast.error("Connection unavailable", {
+				description: "The selected connection no longer exists.",
+			});
 			return;
 		}
 
@@ -129,53 +133,58 @@ function InnerLayout() {
 	const handleConnectionChange = (idStr: string) => {
 		if (idStr === "none") {
 			setActiveConnection(null);
+			toast.info("Connection cleared", {
+				description: "No active database connection.",
+			});
 			return;
 		}
 		const id = parseInt(idStr, 10);
 		const conn = savedConnections.find((c) => c.id === id);
 		if (conn) {
 			setActiveConnection(conn);
+			toast.success("Connection selected", {
+				description: `${conn.name} is now active.`,
+			});
+		} else {
+			toast.error("Selection failed", {
+				description: "Could not find the selected connection.",
+			});
 		}
 	};
 
 	return (
-		<div className="relative min-h-screen flex flex-col font-mono text-foreground">
-			<div className="absolute inset-0 z-[-1] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#27272a_1px,transparent_1px)] bg-size-[16px_16px] animate-pan-slow opacity-50" />
-
-			<header className="flex items-center justify-between p-4 border-b-4 border-black dark:border-white bg-background z-10 shrink-0">
+		<div className="relative min-h-screen flex flex-col font-mono text-foreground bg-background">
+			<header className="flex items-center justify-between p-4 border-b-2 border-border bg-card z-10 shrink-0">
 				<div className="flex items-center gap-6">
-					<div className="flex items-center gap-2 font-bold text-xl tracking-tighter uppercase p-2 border-2 border-black dark:border-white bg-orange-500 text-black shadow-hardware dark:shadow-hardware-dark">
-						<TerminalSquare className="w-5 h-5 text-black" />
+					<div className="flex items-center gap-2 font-bold text-xl tracking-tighter uppercase p-2 border-2 border-border bg-primary text-primary-foreground shadow-hardware">
+						<TerminalSquare className="w-5 h-5" />
 						<span>OMNIDUMP</span>
 					</div>
 
 					<nav className="flex items-center gap-3">
 						<Link
 							to="/"
-							className="px-4 py-2 uppercase font-bold text-sm border-2 border-transparent transition-all hover:border-black dark:hover:border-white"
+							className="px-4 py-2 uppercase font-bold shadow-hardware text-sm border-2 border-border text-primary active:text-orange-500! active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
 							activeProps={{
-								className:
-									"!border-black dark:!border-white shadow-hardware dark:shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none bg-zinc-100 text-black dark:bg-zinc-800 dark:text-white rounded-none",
+								className: "!text-orange-400 bg-neutral-800",
 							}}
 						>
 							Home
 						</Link>
 						<Link
 							to="/schema"
-							className="px-4 py-2 uppercase font-bold text-sm border-2 border-transparent transition-all hover:border-black dark:hover:border-white"
+							className="px-4 py-2 uppercase font-bold shadow-hardware text-sm border-2 border-border text-primary active:text-orange-500! active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
 							activeProps={{
-								className:
-									"!border-black dark:!border-white shadow-hardware dark:shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none bg-zinc-100 text-black dark:bg-zinc-800 dark:text-white rounded-none",
+								className: "!text-orange-400 bg-neutral-800",
 							}}
 						>
 							Schema
 						</Link>
 						<Link
 							to="/import"
-							className="px-4 py-2 uppercase font-bold text-sm border-2 border-transparent transition-all hover:border-black dark:hover:border-white"
+							className="px-4 py-2 uppercase font-bold shadow-hardware text-sm border-2 border-border text-primary active:text-orange-500! active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
 							activeProps={{
-								className:
-									"!border-black dark:!border-white shadow-hardware dark:shadow-hardware-dark active:translate-x-[2px] active:translate-y-[2px] active:shadow-none bg-zinc-100 text-black dark:bg-zinc-800 dark:text-white rounded-none",
+								className: "!text-orange-400 bg-neutral-800",
 							}}
 						>
 							Import
@@ -192,13 +201,13 @@ function InnerLayout() {
 							value={activeConnection?.id?.toString() || "none"}
 							onValueChange={handleConnectionChange}
 						>
-							<SelectTrigger className="w-50 border-2 border-black dark:border-white rounded-none shadow-hardware dark:shadow-hardware-dark font-bold bg-background text-foreground h-10 uppercase transition-all focus:ring-0 focus:ring-offset-0 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
+							<SelectTrigger className="w-50 border-2 border-border rounded-none shadow-hardware font-bold bg-card text-foreground h-10 uppercase focus:ring-0 focus:ring-offset-0 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none">
 								<SelectValue placeholder="Select Database" />
 							</SelectTrigger>
-							<SelectContent className="border-2 border-black dark:border-white rounded-none shadow-hardware dark:shadow-hardware-dark font-mono bg-background">
+							<SelectContent className="border-2 border-border rounded-none shadow-hardware font-mono bg-card">
 								<SelectItem
 									value="none"
-									className="rounded-none cursor-pointer focus:bg-zinc-200 dark:focus:bg-zinc-800 font-bold uppercase text-xs"
+									className="rounded-none cursor-pointer focus:bg-secondary hover:bg-primary! hover:text-primary-foreground! font-bold uppercase text-xs transition-none"
 								>
 									No connection
 								</SelectItem>
@@ -206,11 +215,11 @@ function InnerLayout() {
 									<SelectItem
 										key={conn.id}
 										value={conn.id.toString()}
-										className="rounded-none cursor-pointer focus:bg-zinc-200 dark:focus:bg-zinc-800 font-bold uppercase text-xs"
+										className="rounded-none cursor-pointer focus:bg-secondary hover:bg-primary! hover:text-primary-foreground! font-bold uppercase text-xs transition-none"
 									>
 										<div className="flex items-center gap-2">
 											<div
-												className={`w-2 h-2 rounded-none border border-black dark:border-white ${activeConnection?.id === conn.id ? "bg-orange-500" : "bg-transparent"}`}
+												className={`w-2 h-2 rounded-none border border-border ${activeConnection?.id === conn.id ? "bg-primary" : "bg-transparent"}`}
 											/>
 											{conn.name}
 										</div>

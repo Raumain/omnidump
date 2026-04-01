@@ -270,9 +270,9 @@ function ImportPage() {
 	if (!activeConnection) {
 		return (
 			<main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-6 md:p-10 font-mono">
-				<Card className="w-full max-w-md bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
+				<Card className="w-full max-w-md bg-card border-2 border-border p-6 shadow-hardware rounded-none">
 					<CardHeader>
-						<CardTitle className="text-2xl font-black uppercase tracking-wider">
+						<CardTitle className="text-2xl font-black uppercase tracking-wider text-primary">
 							No active connection.
 						</CardTitle>
 					</CardHeader>
@@ -280,10 +280,7 @@ function ImportPage() {
 						<p className="text-sm font-bold uppercase text-muted-foreground">
 							Select a saved connection to start.
 						</p>
-						<Button
-							asChild
-							className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
-						>
+						<Button asChild>
 							<Link to="/">Back</Link>
 						</Button>
 					</CardContent>
@@ -294,30 +291,30 @@ function ImportPage() {
 
 	return (
 		<main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 p-6 md:p-10 font-mono">
-			<div className="flex flex-col gap-2 bg-zinc-950 p-6 border-2 border-black dark:border-white shadow-hardware dark:shadow-hardware-dark">
-				<h1 className="text-3xl font-black uppercase tracking-wider text-white">
+			<div className="flex flex-col gap-2 bg-card p-6 border-2 border-border shadow-hardware">
+				<h1 className="text-3xl font-black uppercase tracking-wider text-primary">
 					DATA_INJECTION_MODULE
 				</h1>
 				<div className="flex items-center gap-3">
-					<div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-					<p className="text-sm font-bold uppercase tracking-widest text-emerald-500">
+					<div className="w-3 h-3 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(255,150,0,0.8)]" />
+					<p className="text-sm font-bold uppercase tracking-widest text-primary">
 						STATUS: READY
 					</p>
-					<span className="text-zinc-600">|</span>
-					<p className="text-sm font-bold text-zinc-400 uppercase tracking-widest">
+					<span className="text-muted-foreground">|</span>
+					<p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
 						{activeConnection.name}
 					</p>
 				</div>
 			</div>
 
-			<Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
-				<CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
-					<CardTitle className="text-xl font-black uppercase tracking-wider">
+			<Card className="bg-card border-2 border-border p-6 shadow-hardware rounded-none">
+				<CardHeader className="p-0 mb-6 border-b-4 border-border pb-4">
+					<CardTitle className="text-xl font-black uppercase tracking-wider text-foreground">
 						1. INSERT CSV MEDIUM
 					</CardTitle>
 				</CardHeader>
 				<CardContent className="p-0">
-					<div className="border-4 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 p-8 text-center relative hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+					<div className="border-4 border-dashed border-border bg-secondary p-8 text-center relative hover:bg-muted transition-colors">
 						<Input
 							ref={fileInputRef}
 							type="file"
@@ -325,34 +322,34 @@ function ImportPage() {
 							onChange={handleFileChange}
 							className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
 						/>
-						<p className="text-lg font-black uppercase tracking-widest text-zinc-500 pointer-events-none">
+						<p className="text-lg font-black uppercase tracking-widest text-muted-foreground pointer-events-none">
 							{file ? file.name : "CLICK OR DRAG MEDIA HERE"}
 						</p>
 					</div>
 				</CardContent>
 			</Card>
 
-			<Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
-				<CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
-					<CardTitle className="text-xl font-black uppercase tracking-wider">
+			<Card className="bg-card border-2 border-border p-6 shadow-hardware rounded-none">
+				<CardHeader className="p-0 mb-6 border-b-4 border-border pb-4">
+					<CardTitle className="text-xl font-black uppercase tracking-wider text-foreground">
 						2. TARGET TABLE
 					</CardTitle>
 				</CardHeader>
 				<CardContent className="p-0 space-y-3">
 					{schemaQuery.isLoading ? (
-						<p className="text-sm font-bold uppercase animate-pulse">
+						<p className="text-sm font-bold uppercase animate-pulse text-primary">
 							Scanning structures...
 						</p>
 					) : null}
 
 					{schemaError ? (
-						<p className="text-sm font-bold uppercase text-red-500">
+						<p className="text-sm font-bold uppercase text-destructive">
 							{schemaError}
 						</p>
 					) : null}
 
 					{!schemaQuery.isLoading && !schemaError ? (
-						<div className="border-2 border-black p-2 bg-zinc-100 shadow-inner">
+						<div className="border-2 border-border p-2 bg-secondary">
 							<Select
 								value={selectedTable}
 								onValueChange={(value) => {
@@ -360,15 +357,15 @@ function ImportPage() {
 									setMapping({});
 								}}
 							>
-								<SelectTrigger className="w-full rounded-none border-2 border-black bg-white shadow-hardware text-black font-bold uppercase h-12 text-lg">
+								<SelectTrigger className="w-full rounded-none border-2 border-border bg-card shadow-hardware text-foreground font-bold uppercase h-12 text-lg">
 									<SelectValue placeholder="Select a table" />
 								</SelectTrigger>
-								<SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+								<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
 									{tables.map((table) => (
 										<SelectItem
 											key={table.tableName}
 											value={table.tableName}
-											className="rounded-none cursor-pointer focus:bg-zinc-200  hover:!bg-zinc-400 bg-white text-black font-bold uppercase"
+											className="rounded-none cursor-pointer focus:bg-primary focus:text-primary-foreground font-bold uppercase"
 										>
 											{table.tableName}
 										</SelectItem>
@@ -381,14 +378,14 @@ function ImportPage() {
 			</Card>
 
 			{file && selectedTable ? (
-				<Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
-					<CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
-						<CardTitle className="text-xl font-black uppercase tracking-wider">
+				<Card className="bg-card border-2 border-border p-6 shadow-hardware rounded-none">
+					<CardHeader className="p-0 mb-6 border-b-4 border-border pb-4">
+						<CardTitle className="text-xl font-black uppercase tracking-wider text-foreground">
 							3. DATA MAPPING
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-0">
-						<div className="grid grid-cols-2 gap-4 border-b-4 border-black pb-4 text-sm font-black uppercase tracking-widest text-zinc-500">
+						<div className="grid grid-cols-2 gap-4 border-b-4 border-border pb-4 text-sm font-black uppercase tracking-widest text-muted-foreground">
 							<span>CSV HEADER</span>
 							<span>DB COLUMN</span>
 						</div>
@@ -396,9 +393,9 @@ function ImportPage() {
 							{csvHeaders.map((header) => (
 								<div
 									key={header}
-									className="grid grid-cols-1 gap-4 bg-zinc-50 dark:bg-zinc-950 border-2 border-black p-4 sm:grid-cols-2 items-center"
+									className="grid grid-cols-1 gap-4 bg-secondary border-2 border-border p-4 sm:grid-cols-2 items-center"
 								>
-									<p className="truncate text-base font-bold bg-white dark:bg-black px-3 py-2 border-2 border-black shadow-hardware translate-x-[-4px] translate-y-[-4px]">
+									<p className="truncate text-base font-bold bg-card px-3 py-2 border-2 border-border shadow-hardware -translate-x-1 -translate-y-1 text-foreground">
 										{header}
 									</p>
 									<Select
@@ -407,15 +404,15 @@ function ImportPage() {
 											setMapping((prev) => ({ ...prev, [header]: value }));
 										}}
 									>
-										<SelectTrigger className="w-full rounded-none border-2 border-black bg-white shadow-hardware font-bold h-10">
+										<SelectTrigger className="w-full rounded-none border-2 border-border bg-card shadow-hardware font-bold h-10 text-foreground">
 											<SelectValue placeholder="Select column" />
 										</SelectTrigger>
-										<SelectContent className="rounded-none border-2 border-black shadow-hardware font-mono">
+										<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
 											{selectedTableColumns.map((column) => (
 												<SelectItem
 													key={column.name}
 													value={column.name}
-													className="rounded-none cursor-pointer focus:bg-zinc-200 font-bold uppercase"
+													className="rounded-none cursor-pointer focus:bg-primary focus:text-primary-foreground font-bold uppercase"
 												>
 													{column.name}
 												</SelectItem>
@@ -426,7 +423,7 @@ function ImportPage() {
 							))}
 
 							{csvHeaders.length === 0 ? (
-								<p className="text-sm font-bold uppercase text-red-500">
+								<p className="text-sm font-bold uppercase text-destructive">
 									No CSV headers detected.
 								</p>
 							) : null}
@@ -438,26 +435,26 @@ function ImportPage() {
 			{importMutation.isPending ||
 			importMutation.isSuccess ||
 			importMutation.isError ? (
-				<Card className="bg-background border-2 border-black dark:border-white p-6 shadow-hardware dark:shadow-hardware-dark rounded-none">
-					<CardHeader className="p-0 mb-6 border-b-4 border-black pb-4">
-						<CardTitle className="text-xl font-black uppercase tracking-wider">
+				<Card className="bg-card border-2 border-border p-6 shadow-hardware rounded-none">
+					<CardHeader className="p-0 mb-6 border-b-4 border-border pb-4">
+						<CardTitle className="text-xl font-black uppercase tracking-wider text-foreground">
 							INJECTION PROGRESS
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-0 space-y-6">
 						<div className="flex flex-col gap-2">
-							<div className="flex justify-between font-black uppercase tracking-widest text-sm">
+							<div className="flex justify-between font-black uppercase tracking-widest text-sm text-foreground">
 								<span>Inserted</span>
-								<span className="text-emerald-500">{successfulCount}</span>
+								<span className="text-primary">{successfulCount}</span>
 							</div>
-							<div className="flex justify-between font-black uppercase tracking-widest text-sm">
+							<div className="flex justify-between font-black uppercase tracking-widest text-sm text-foreground">
 								<span>Failed</span>
-								<span className="text-red-500">{failedCount}</span>
+								<span className="text-destructive">{failedCount}</span>
 							</div>
-							<div className="w-full h-8 bg-zinc-200 border-2 border-black mt-2 relative overflow-hidden">
+							<div className="w-full h-8 bg-secondary border-2 border-border mt-2 relative overflow-hidden">
 								{/* Physical LED Ladder representation */}
 								<div
-									className="h-full bg-emerald-500 transition-all duration-300 pattern-vertical-lines"
+									className="h-full bg-primary transition-all duration-300 pattern-vertical-lines"
 									style={{
 										width:
 											successfulCount + failedCount > 0
@@ -472,16 +469,13 @@ function ImportPage() {
 						</div>
 
 						{importMutation.isSuccess ? (
-							<div className="flex flex-col gap-4 border-t-2 border-dashed border-zinc-400 pt-4">
-								<p className="font-black uppercase tracking-widest text-lg">
+							<div className="flex flex-col gap-4 border-t-2 border-dashed border-border pt-4">
+								<p className="font-black uppercase tracking-widest text-lg text-primary">
 									PROCESS COMPLETE
 								</p>
 								<div className="flex flex-wrap items-center gap-4">
 									{failedCount > 0 && rejectFileName ? (
-										<Button
-											className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700"
-											asChild
-										>
+										<Button variant="destructive" asChild>
 											<a
 												href={`/api/download-reject?fileName=${encodeURIComponent(rejectFileName)}`}
 											>
@@ -490,11 +484,7 @@ function ImportPage() {
 										</Button>
 									) : null}
 
-									<Button
-										type="button"
-										onClick={resetForm}
-										className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200"
-									>
+									<Button type="button" onClick={resetForm}>
 										Reset Module
 									</Button>
 								</div>
@@ -504,19 +494,15 @@ function ImportPage() {
 				</Card>
 			) : null}
 
-			<div className="mt-8 flex items-center justify-between gap-4 py-4">
-				<Button
-					asChild
-					className="rounded-none border-2 border-black shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-zinc-100 text-black hover:bg-zinc-200 h-14 px-8 text-lg"
-				>
-					<Link to="/">ABORT</Link>
-				</Button>
+			<div className="mt-8 flex items-center justify-between gap-4 py-4 border-t-2 border-border">
 				{!importMutation.isPending ? (
 					<Button
 						type="button"
 						onClick={handleImport}
 						disabled={!canImport}
-						className="flex-1 rounded-none border-4 border-black shadow-hardware active:translate-x-[4px] active:translate-y-[4px] active:shadow-none font-black uppercase bg-orange-500 text-black hover:bg-orange-400 h-20 text-2xl tracking-widest disabled:opacity-50 disabled:active:translate-x-0 disabled:active:translate-y-0 disabled:active:shadow-hardware flex items-center justify-center gap-3"
+						variant="accent"
+						size="xl"
+						className="flex-1 border-4 text-2xl tracking-widest disabled:opacity-50 disabled:active:translate-x-0 disabled:active:translate-y-0 disabled:active:shadow-hardware flex items-center justify-center gap-3 h-20"
 					>
 						<Zap className="w-8 h-8" />
 						INITIATE INJECTION
@@ -530,19 +516,19 @@ function ImportPage() {
 					if (!open) setErrorMessage(null);
 				}}
 			>
-				<AlertDialogContent className="rounded-none border-4 border-red-600 shadow-hardware font-mono p-6">
+				<AlertDialogContent className="rounded-none border-4 border-destructive shadow-hardware font-mono p-6 bg-card">
 					<AlertDialogHeader>
-						<AlertDialogTitle className="text-2xl font-black uppercase text-red-600 flex items-center gap-2">
+						<AlertDialogTitle className="text-2xl font-black uppercase text-destructive flex items-center gap-2">
 							<AlertTriangle className="w-6 h-6" /> INJECTION ERROR
 						</AlertDialogTitle>
-						<AlertDialogDescription className="text-foreground font-bold uppercase tracking-widest mt-4">
+						<AlertDialogDescription className="text-muted-foreground font-bold uppercase tracking-widest mt-4">
 							{errorMessage}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter className="mt-6">
 						<AlertDialogAction
 							onClick={() => setErrorMessage(null)}
-							className="rounded-none border-2 border-black dark:border-transparent shadow-hardware active:translate-x-[2px] active:translate-y-[2px] active:shadow-none font-bold uppercase bg-red-600 text-white hover:bg-red-700 w-full sm:w-auto"
+							className="rounded-none border-2 border-destructive shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full sm:w-auto"
 						>
 							ACKNOWLEDGE
 						</AlertDialogAction>

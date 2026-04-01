@@ -601,7 +601,6 @@ export const withTunnel = async <T>(
 		);
 	}
 
-	const _localPort = await runtime.getFreePort();
 	const targetPort =
 		credentials.port || (credentials.driver === "postgres" ? 5432 : 3306);
 	const targetHost = credentials.host || "127.0.0.1";
