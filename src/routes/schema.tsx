@@ -1,51 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-	AlertTriangle,
-	ChevronDown,
-	Database,
-	Download,
-	Loader2,
-	RefreshCw,
-	Trash2,
-	Upload,
-	Zap,
-} from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import Loader from "@/components/Loader.tsx";
-
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-	Drawer,
-	DrawerBody,
-	DrawerClose,
-	DrawerContent,
-	DrawerDescription,
-	DrawerFooter,
-	DrawerHeader,
-	DrawerTitle,
-} from "@/components/ui/drawer";
-import { Input } from "@/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+import { NoConnectionState } from "@/components/NoConnectionState";
 import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
 import {
 	clearTableDataFn,
@@ -55,6 +15,16 @@ import {
 	restoreDumpFn,
 	wipeAllDataFn,
 } from "@/server/schema-fns";
+
+import { ActionsBar } from "./_schema/components/ActionsBar";
+import { ImportDrawer } from "./_schema/components/ImportDrawer";
+import { RestoreModal } from "./_schema/components/RestoreModal";
+import { SchemaHeader } from "./_schema/components/SchemaHeader";
+import {
+	TableDetail,
+	TableDetailEmpty,
+} from "./_schema/components/TableDetail";
+import { TableList } from "./_schema/components/TableList";
 
 export const Route = createFileRoute("/schema")({ component: SchemaPage });
 
@@ -460,13 +430,6 @@ function SchemaPage() {
 	);
 	const selectedTableColumns = selectedTableData?.columns ?? [];
 
-	const isDumping = dumpMutation.isPending;
-	const isWipingAllData = wipeAllDataMutation.isPending;
-	const isDroppingAllTables = dropAllTablesMutation.isPending;
-	const isRestoringDump = restoreDumpMutation.isPending;
-	const isSeeding = seedMutation.isPending;
-	const isImporting = importMutation.isPending;
-
 	const isMappingReady =
 		csvHeaders.length > 0 &&
 		csvHeaders.every((header) => Boolean(columnMapping[header]));
@@ -576,251 +539,34 @@ function SchemaPage() {
 
 	if (!activeConnection) {
 		return (
-			<section className="mx-auto flex min-h-screen w-full items-center justify-center p-6 md:p-10 font-mono">
-				<div className="bg-card border-2 border-border p-6 shadow-hardware w-full max-w-md">
-					<h2 className="text-2xl font-black uppercase tracking-wider text-primary mb-4">
-						No active connection.
-					</h2>
-					<p className="text-muted-foreground font-bold mb-6">
-						Select a saved connection to explore its schema.
-					</p>
-					<Button asChild>
-						<Link to="/">Back to connections</Link>
-					</Button>
-				</div>
-			</section>
+			<NoConnectionState
+				title="No active connection."
+				message="Select a saved connection to explore its schema."
+			/>
 		);
 	}
 
 	return (
 		<section className="mx-auto flex min-h-screen w-full flex-col gap-6 p-6 md:p-10 font-mono">
-			{/* Header */}
-			<div className="bg-card border-2 border-border p-6 shadow-hardware w-full">
-				<h1 className="text-3xl font-black uppercase tracking-wider text-primary">
-					SCHEMA_EXPLORER
-				</h1>
-				<div className="flex items-center gap-3 mt-2">
-					<div className="w-3 h-3 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(255,150,0,0.8)]" />
-					<p className="text-sm font-bold uppercase tracking-widest text-primary">
-						STATUS: ONLINE
-					</p>
-					<span className="text-muted-foreground">|</span>
-					<p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
-						{activeConnection.name}
-					</p>
-				</div>
-			</div>
+			<SchemaHeader connectionName={activeConnection.name} />
 
-			{/* Actions Bar */}
-			<div className="bg-card border-2 border-border p-4 shadow-hardware">
-				<div className="flex flex-wrap items-center gap-3">
-					<div className="flex items-center gap-2 bg-secondary p-2 border-2 border-border">
-						<Select
-							value={schemaExportFormat}
-							onValueChange={(value) => {
-								setSchemaExportFormat(value as "json" | "dbml" | "sql");
-							}}
-						>
-							<SelectTrigger className="w-35 rounded-none border-2 border-border shadow-hardware bg-card text-foreground font-bold uppercase disabled:opacity-50">
-								<SelectValue placeholder="Format" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
-								<SelectItem
-									value="json"
-									className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-								>
-									Export JSON
-								</SelectItem>
-								<SelectItem
-									value="dbml"
-									className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-								>
-									Export DBML
-								</SelectItem>
-								<SelectItem
-									value="sql"
-									className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-								>
-									Export SQL
-								</SelectItem>
-							</SelectContent>
-						</Select>
-						<Button
-							type="button"
-							asChild
-							disabled={
-								isDumping ||
-								isWipingAllData ||
-								isDroppingAllTables ||
-								clearTableMutation.isPending ||
-								isRestoringDump ||
-								isSeeding
-							}
-						>
-							<a
-								href={`/api/export-schema?connectionId=${activeConnection.id}&format=${schemaExportFormat}`}
-								className=" hover:bg-neutral-600! text-foreground!"
-							>
-								Export Schema
-							</a>
-						</Button>
-					</div>
-
-					<div className="flex items-center gap-2 bg-secondary p-2 border-2 border-border">
-						<Select
-							value={dumpType}
-							onValueChange={(value) => {
-								setDumpType(value as "data" | "both");
-							}}
-						>
-							<SelectTrigger className="w-38 rounded-none border-2 border-border shadow-hardware bg-card text-foreground font-bold uppercase disabled:opacity-50">
-								<SelectValue placeholder="Dump type" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
-								<SelectItem
-									value="data"
-									className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-								>
-									Data Only
-								</SelectItem>
-								<SelectItem
-									value="both"
-									className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-								>
-									Data + Schema
-								</SelectItem>
-							</SelectContent>
-						</Select>
-						<Button
-							type="button"
-							className="hover:bg-neutral-600!"
-							onClick={() => {
-								dumpMutation.mutate();
-							}}
-							disabled={
-								isDumping ||
-								isWipingAllData ||
-								isDroppingAllTables ||
-								clearTableMutation.isPending ||
-								isRestoringDump ||
-								isSeeding
-							}
-						>
-							{isDumping ? (
-								<Loader2 className="animate-spin w-4 h-4 mr-2" />
-							) : (
-								<Download className="w-4 h-4 mr-2" />
-							)}
-							{isDumping ? "Saving..." : "Dump SQL"}
-						</Button>
-					</div>
-
-					<Button
-						type="button"
-						variant="accent"
-						disabled={
-							isWipingAllData ||
-							isDroppingAllTables ||
-							clearTableMutation.isPending ||
-							isRestoringDump ||
-							isSeeding
-						}
-						onClick={() => {
-							setIsRestoreModalOpen(true);
-						}}
-					>
-						Restore
-					</Button>
-
-					<AlertDialog>
-						<AlertDialogTrigger asChild>
-							<Button
-								type="button"
-								variant="destructive"
-								disabled={
-									wipeAllDataMutation.isPending ||
-									dropAllTablesMutation.isPending ||
-									clearTableMutation.isPending ||
-									isSeeding
-								}
-							>
-								<AlertTriangle className="w-4 h-4" />
-								{isWipingAllData ? "Wiping..." : "Wipe Data"}
-							</Button>
-						</AlertDialogTrigger>
-						<AlertDialogContent className="rounded-none border-4 border-destructive shadow-hardware font-mono p-6 bg-card">
-							<AlertDialogHeader>
-								<AlertDialogTitle className="text-2xl font-black uppercase text-destructive flex items-center gap-2">
-									<AlertTriangle className="w-6 h-6" /> Wipe all data?
-								</AlertDialogTitle>
-								<AlertDialogDescription className="text-muted-foreground font-bold">
-									WARNING: This will delete ALL data across ALL tables in this
-									database. The schema will remain intact. This action is
-									irreversible.
-								</AlertDialogDescription>
-							</AlertDialogHeader>
-							<AlertDialogFooter className="mt-6">
-								<AlertDialogCancel className="rounded-none border-2 border-border bg-secondary hover:bg-muted active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase text-foreground">
-									Cancel
-								</AlertDialogCancel>
-								<AlertDialogAction
-									onClick={() => {
-										wipeAllDataMutation.mutate();
-									}}
-									className="rounded-none border-2 border-destructive shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-destructive text-destructive-foreground hover:bg-destructive/90"
-								>
-									{isWipingAllData ? "Wiping..." : "Execute Wipe"}
-								</AlertDialogAction>
-							</AlertDialogFooter>
-						</AlertDialogContent>
-					</AlertDialog>
-
-					<AlertDialog>
-						<AlertDialogTrigger asChild>
-							<Button
-								type="button"
-								variant="destructive"
-								disabled={
-									dropAllTablesMutation.isPending ||
-									wipeAllDataMutation.isPending ||
-									clearTableMutation.isPending ||
-									isRestoringDump ||
-									isSeeding
-								}
-							>
-								<AlertTriangle className="w-4 h-4" />
-								{isDroppingAllTables ? "Dropping..." : "Drop Total"}
-							</Button>
-						</AlertDialogTrigger>
-						<AlertDialogContent className="rounded-none border-4 border-destructive shadow-hardware font-mono p-6 bg-card">
-							<AlertDialogHeader>
-								<AlertDialogTitle className="text-2xl font-black uppercase text-destructive flex items-center gap-2">
-									<AlertTriangle className="w-6 h-6" /> Drop all tables?
-								</AlertDialogTitle>
-								<AlertDialogDescription className="text-muted-foreground font-bold">
-									DANGER: This will completely DESTROY ALL TABLES and their
-									data. Your database schema will be wiped clean. You will need
-									to rerun your ORM migrations to rebuild the structure. This is
-									completely irreversible.
-								</AlertDialogDescription>
-							</AlertDialogHeader>
-							<AlertDialogFooter className="mt-6">
-								<AlertDialogCancel className="rounded-none border-2 border-border bg-secondary hover:bg-muted active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase text-foreground">
-									Cancel
-								</AlertDialogCancel>
-								<AlertDialogAction
-									onClick={() => {
-										dropAllTablesMutation.mutate();
-									}}
-									className="rounded-none border-2 border-destructive shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-destructive text-destructive-foreground hover:bg-destructive/90"
-								>
-									{isDroppingAllTables ? "Dropping..." : "Execute Drop"}
-								</AlertDialogAction>
-							</AlertDialogFooter>
-						</AlertDialogContent>
-					</AlertDialog>
-				</div>
-			</div>
+			<ActionsBar
+				connectionId={activeConnection.id}
+				schemaExportFormat={schemaExportFormat}
+				dumpType={dumpType}
+				isDumping={dumpMutation.isPending}
+				isWipingAllData={wipeAllDataMutation.isPending}
+				isDroppingAllTables={dropAllTablesMutation.isPending}
+				isClearingTable={clearTableMutation.isPending}
+				isRestoringDump={restoreDumpMutation.isPending}
+				isSeeding={seedMutation.isPending}
+				onSchemaExportFormatChange={setSchemaExportFormat}
+				onDumpTypeChange={setDumpType}
+				onDump={() => dumpMutation.mutate()}
+				onOpenRestoreModal={() => setIsRestoreModalOpen(true)}
+				onWipeAllData={() => wipeAllDataMutation.mutate()}
+				onDropAllTables={() => dropAllTablesMutation.mutate()}
+			/>
 
 			{/* Error State */}
 			{schemaError ? (
@@ -848,424 +594,79 @@ function SchemaPage() {
 			{/* Main Content Grid */}
 			{!schemaQuery.isLoading && !schemaError ? (
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					{/* Table List (Master View) */}
-					<div className="lg:col-span-1 bg-card border-2 border-border shadow-hardware">
-						<div className="p-4 border-b-2 border-border flex items-center justify-between">
-							<h2 className="font-black uppercase tracking-wider text-primary flex items-center gap-2">
-								<Database className="w-5 h-5" />
-								Tables
-							</h2>
-							<Button
-								size="icon-sm"
-								variant="ghost"
-								onClick={() => schemaQuery.refetch()}
-								disabled={schemaQuery.isRefetching}
-							>
-								<RefreshCw
-									className={`w-4 h-4 ${schemaQuery.isRefetching ? "animate-spin" : ""}`}
-								/>
-							</Button>
-						</div>
-						<div className="divide-y divide-border">
-							{tables.map((table) => (
-								<button
-									type="button"
-									key={table.tableName}
-									onClick={() => setSelectedTable(table.tableName)}
-									className={`w-full p-4 text-left font-bold uppercase tracking-wide transition-none hover:bg-secondary ${
-										selectedTable === table.tableName
-											? "bg-primary text-primary-foreground"
-											: "text-foreground"
-									}`}
-								>
-									<div className="flex items-center justify-between">
-										<span className="truncate">{table.tableName}</span>
-										<span
-											className={`text-xs ${selectedTable === table.tableName ? "text-primary-foreground/70" : "text-muted-foreground"}`}
-										>
-											{table.columns.length} cols
-										</span>
-									</div>
-								</button>
-							))}
-							{tables.length === 0 ? (
-								<div className="p-4 text-center text-muted-foreground font-bold uppercase">
-									No tables found
-								</div>
-							) : null}
-						</div>
-					</div>
+					<TableList
+						tables={tables}
+						selectedTable={selectedTable}
+						isRefetching={schemaQuery.isRefetching}
+						onSelectTable={setSelectedTable}
+						onRefresh={() => schemaQuery.refetch()}
+					/>
 
 					{/* Table Detail (Inspector View) */}
 					<div className="lg:col-span-2 bg-card border-2 border-border shadow-hardware">
 						{selectedTableData ? (
-							<>
-								<div className="p-4 border-b-2 border-border flex items-center justify-between">
-									<h2 className="font-black uppercase tracking-wider text-primary flex items-center gap-2">
-										<ChevronDown className="w-5 h-5" />
-										{selectedTableData.tableName}
-									</h2>
-									<span className="text-xs text-muted-foreground font-bold uppercase">
-										{selectedTableData.columns.length} Columns
-									</span>
-								</div>
-
-								{/* Column Grid */}
-								<div className="p-4 space-y-2">
-									<div className="grid grid-cols-3 gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground pb-2 border-b border-border">
-										<span>Column</span>
-										<span>Type</span>
-										<span>Nullable</span>
-									</div>
-									{selectedTableData.columns.map((column) => (
-										<div
-											key={column.name}
-											className="grid grid-cols-3 gap-2 text-sm font-mono py-2 border-b border-[#222222] hover:bg-secondary"
-										>
-											<span className="font-bold text-foreground truncate">
-												{column.name}
-											</span>
-											<span className="text-primary font-bold uppercase text-xs">
-												{column.dataType}
-											</span>
-											<span
-												className={`font-bold text-xs ${column.isNullable ? "text-muted-foreground" : "text-destructive"}`}
-											>
-												{column.isNullable ? "YES" : "NO"}
-											</span>
-										</div>
-									))}
-								</div>
-
-								{/* Table Actions */}
-								<div className="p-4 border-t-2 border-border flex flex-wrap items-center gap-3">
-									<div className="flex items-center gap-2 bg-secondary p-2 border-2 border-border">
-										<Input
-											type="number"
-											min="1"
-											max="1000"
-											value={seedCount}
-											onChange={(e) => setSeedCount(e.target.value)}
-											className="w-20 rounded-none border-2 border-border bg-card text-foreground font-bold text-center h-10"
-											placeholder="10"
-										/>
-										<Button
-											type="button"
-											variant="accent"
-											onClick={() => {
-												seedMutation.mutate({
-													tableName: selectedTableData.tableName,
-													count: Number(seedCount) || 10,
-												});
-											}}
-											disabled={isSeeding || clearTableMutation.isPending}
-										>
-											{isSeeding ? (
-												<Loader2 className="animate-spin w-4 h-4 mr-2" />
-											) : null}
-											{isSeeding ? "Seeding..." : "Seed Table"}
-										</Button>
-									</div>
-
-									<Button
-										type="button"
-										variant="outline"
-										className="shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
-										onClick={openImportDrawer}
-										disabled={isImporting}
-									>
-										<Upload className="w-4 h-4 mr-2" />
-										Import CSV
-									</Button>
-
-									<AlertDialog>
-										<AlertDialogTrigger asChild>
-											<Button
-												type="button"
-												variant="destructive"
-												disabled={clearTableMutation.isPending || isSeeding}
-											>
-												<Trash2 className="w-4 h-4" />
-												{clearTableMutation.isPending
-													? "Clearing..."
-													: "Clear Table"}
-											</Button>
-										</AlertDialogTrigger>
-										<AlertDialogContent className="rounded-none border-4 border-destructive shadow-hardware font-mono p-6 bg-card">
-											<AlertDialogHeader>
-												<AlertDialogTitle className="text-2xl font-black uppercase text-destructive flex items-center gap-2">
-													<AlertTriangle className="w-6 h-6" /> Clear table?
-												</AlertDialogTitle>
-												<AlertDialogDescription className="text-muted-foreground font-bold">
-													This will delete ALL data from{" "}
-													<span className="text-primary">
-														{selectedTableData.tableName}
-													</span>
-													. The table structure will remain intact.
-												</AlertDialogDescription>
-											</AlertDialogHeader>
-											<AlertDialogFooter className="mt-6">
-												<AlertDialogCancel className="rounded-none border-2 border-border bg-secondary hover:bg-muted active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase text-foreground">
-													Cancel
-												</AlertDialogCancel>
-												<AlertDialogAction
-													onClick={() => {
-														clearTableMutation.mutate(
-															selectedTableData.tableName,
-														);
-													}}
-													className="rounded-none border-2 border-destructive shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-destructive text-destructive-foreground hover:bg-destructive/90"
-												>
-													Execute Clear
-												</AlertDialogAction>
-											</AlertDialogFooter>
-										</AlertDialogContent>
-									</AlertDialog>
-								</div>
-							</>
+							<TableDetail
+								tableName={selectedTableData.tableName}
+								columns={selectedTableData.columns}
+								seedCount={seedCount}
+								isSeeding={seedMutation.isPending}
+								isClearingTable={clearTableMutation.isPending}
+								isImporting={importMutation.isPending}
+								onSeedCountChange={setSeedCount}
+								onSeed={(tableName, count) =>
+									seedMutation.mutate({ tableName, count })
+								}
+								onOpenImportDrawer={openImportDrawer}
+								onClearTable={(tableName) =>
+									clearTableMutation.mutate(tableName)
+								}
+							/>
 						) : (
-							<div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-								<Database className="w-12 h-12 mb-4 opacity-50" />
-								<p className="font-bold uppercase tracking-wider">
-									Select a table to inspect
-								</p>
-							</div>
+							<TableDetailEmpty />
 						)}
 					</div>
 				</div>
 			) : null}
 
-			{/* Restore Modal */}
-			<AlertDialog
-				open={isRestoreModalOpen}
-				onOpenChange={(open) => {
-					if (!open) {
-						setIsRestoreModalOpen(false);
-						setSelectedDump(null);
+			<RestoreModal
+				isOpen={isRestoreModalOpen}
+				dumps={dumpsQuery.data ?? []}
+				selectedDump={selectedDump}
+				isRestoring={restoreDumpMutation.isPending}
+				onOpenChange={setIsRestoreModalOpen}
+				onSelectDump={setSelectedDump}
+				onRestore={() => {
+					if (selectedDump) {
+						restoreDumpMutation.mutate(selectedDump);
 					}
 				}}
-			>
-				<AlertDialogContent className="rounded-none border-4 border-primary shadow-hardware font-mono p-6 bg-card">
-					<AlertDialogHeader>
-						<AlertDialogTitle className="text-2xl font-black uppercase text-primary flex items-center gap-2">
-							<Database className="w-6 h-6" /> Restore Dump
-						</AlertDialogTitle>
-						<AlertDialogDescription className="text-muted-foreground font-bold">
-							Select a SQL dump file to restore into the database.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<div className="mt-4">
-						<Select
-							value={selectedDump ?? ""}
-							onValueChange={(value) => setSelectedDump(value)}
-						>
-							<SelectTrigger className="w-full rounded-none border-2 border-border shadow-hardware bg-card text-foreground font-bold uppercase disabled:opacity-50">
-								<SelectValue placeholder="Select a dump file" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
-								{dumpsQuery.data?.map((dump) => (
-									<SelectItem
-										key={dump}
-										value={dump}
-										className="font-bold rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-									>
-										{dump}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-					<AlertDialogFooter className="mt-6">
-						<AlertDialogCancel className="rounded-none border-2 border-border bg-secondary hover:bg-muted active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase text-foreground">
-							Cancel
-						</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={() => {
-								if (selectedDump) {
-									restoreDumpMutation.mutate(selectedDump);
-								}
-							}}
-							disabled={!selectedDump || isRestoringDump}
-							className="rounded-none border-2 border-primary shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-bold uppercase bg-primary text-primary-foreground hover:bg-primary/90"
-						>
-							{isRestoringDump ? (
-								<Loader2 className="animate-spin w-4 h-4 mr-2" />
-							) : null}
-							{isRestoringDump ? "Restoring..." : "Execute Restore"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			/>
 
-			{/* CSV Import Drawer */}
-			<Drawer open={isImportDrawerOpen} onOpenChange={setIsImportDrawerOpen}>
-				<DrawerContent className="w-[40%]">
-					<DrawerHeader>
-						<DrawerTitle>
-							<Upload className="w-5 h-5 inline-block mr-2" />
-							Import CSV to {selectedTable}
-						</DrawerTitle>
-						<DrawerDescription>
-							Map CSV columns to database columns
-						</DrawerDescription>
-					</DrawerHeader>
-
-					<DrawerBody>
-						{/* File Upload */}
-						<div className="mb-6">
-							<p className="text-xs font-black uppercase tracking-widest mb-2 text-muted-foreground">
-								1. Select CSV File
-							</p>
-							<div className="border-4 border-dashed border-border bg-secondary p-6 text-center relative hover:bg-muted transition-colors">
-								<Input
-									ref={csvFileInputRef}
-									type="file"
-									accept=".csv"
-									onChange={handleCsvFileChange}
-									className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-								/>
-								<p className="text-sm font-black uppercase tracking-widest text-muted-foreground pointer-events-none">
-									{csvFile ? csvFile.name : "Click or drag file here"}
-								</p>
-							</div>
-						</div>
-
-						{/* Column Mapping */}
-						{csvFile && csvHeaders.length > 0 ? (
-							<div className="mb-6">
-								<p className="text-xs font-black uppercase tracking-widest mb-2 text-muted-foreground">
-									2. Map Columns
-								</p>
-								<div className="grid grid-cols-2 gap-2 border-b-2 border-border pb-2 text-xs font-black uppercase tracking-widest text-muted-foreground mb-3">
-									<span>CSV Header</span>
-									<span>DB Column</span>
-								</div>
-								<div className="space-y-3 overflow-y-auto">
-									{csvHeaders.map((header) => (
-										<div
-											key={header}
-											className="grid grid-cols-2 gap-3 items-center bg-secondary border-2 border-border p-3"
-										>
-											<p className="truncate text-sm font-bold text-foreground">
-												{header}
-											</p>
-											<Select
-												value={columnMapping[header] ?? ""}
-												onValueChange={(value) => {
-													setColumnMapping((prev) => ({
-														...prev,
-														[header]: value,
-													}));
-												}}
-											>
-												<SelectTrigger className="w-full rounded-none border-2 border-border bg-card shadow-hardware font-bold h-9 text-foreground text-sm">
-													<SelectValue placeholder="Select" />
-												</SelectTrigger>
-												<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
-													{selectedTableColumns.map((column) => (
-														<SelectItem
-															key={column.name}
-															value={column.name}
-															className="rounded-none cursor-pointer focus:bg-primary focus:text-primary-foreground font-bold uppercase text-sm"
-														>
-															{column.name}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-									))}
-								</div>
-							</div>
-						) : null}
-
-						{/* Import Progress */}
-						{importMutation.isPending || importMutation.isSuccess ? (
-							<div className="mb-6 bg-secondary border-2 border-border p-4">
-								<p className="text-xs font-black uppercase tracking-widest mb-3 text-muted-foreground">
-									Import Progress
-								</p>
-								<div className="flex justify-between font-bold uppercase tracking-widest text-sm text-foreground mb-2">
-									<span>Inserted</span>
-									<span className="text-primary">{importSuccessCount}</span>
-								</div>
-								<div className="flex justify-between font-bold uppercase tracking-widest text-sm text-foreground mb-2">
-									<span>Failed</span>
-									<span className="text-destructive">{importFailedCount}</span>
-								</div>
-								<div className="w-full h-6 bg-card border-2 border-border mt-2 relative overflow-hidden">
-									<div
-										className="h-full bg-primary transition-all duration-300"
-										style={{
-											width:
-												importSuccessCount + importFailedCount > 0
-													? `${(importSuccessCount / (importSuccessCount + importFailedCount)) * 100}%`
-													: "0%",
-											backgroundImage:
-												"linear-gradient(90deg, transparent 50%, rgba(0,0,0,0.5) 50%)",
-											backgroundSize: "10px 100%",
-										}}
-									/>
-								</div>
-
-								{importMutation.isSuccess &&
-								importFailedCount > 0 &&
-								rejectFileName ? (
-									<Button variant="destructive" className="mt-4 w-full" asChild>
-										<a
-											href={`/api/download-reject?fileName=${encodeURIComponent(rejectFileName)}`}
-										>
-											Download Rejects
-										</a>
-									</Button>
-								) : null}
-							</div>
-						) : null}
-					</DrawerBody>
-
-					<DrawerFooter>
-						{importMutation.isSuccess ? (
-							<>
-								<Button
-									type="button"
-									onClick={() => {
-										resetImportDrawer();
-									}}
-								>
-									Import Another File
-								</Button>
-								<DrawerClose asChild>
-									<Button type="button" variant="outline">
-										Close
-									</Button>
-								</DrawerClose>
-							</>
-						) : (
-							<>
-								<Button
-									type="button"
-									variant="accent"
-									onClick={handleImport}
-									disabled={!csvFile || !isMappingReady || isImporting}
-									className="flex items-center gap-2"
-								>
-									{isImporting ? (
-										<Loader2 className="animate-spin w-4 h-4" />
-									) : (
-										<Zap className="w-4 h-4" />
-									)}
-									{isImporting ? "Importing..." : "Start Import"}
-								</Button>
-								<DrawerClose asChild>
-									<Button type="button" variant="outline">
-										Cancel
-									</Button>
-								</DrawerClose>
-							</>
-						)}
-					</DrawerFooter>
-				</DrawerContent>
-			</Drawer>
+			<ImportDrawer
+				isOpen={isImportDrawerOpen}
+				selectedTable={selectedTable}
+				tableColumns={selectedTableColumns}
+				csvFile={csvFile}
+				csvHeaders={csvHeaders}
+				columnMapping={columnMapping}
+				importSuccessCount={importSuccessCount}
+				importFailedCount={importFailedCount}
+				rejectFileName={rejectFileName}
+				isImporting={importMutation.isPending}
+				isImportSuccess={importMutation.isSuccess}
+				isMappingReady={isMappingReady}
+				csvFileInputRef={csvFileInputRef}
+				onOpenChange={setIsImportDrawerOpen}
+				onCsvFileChange={handleCsvFileChange}
+				onColumnMappingChange={(header, column) => {
+					setColumnMapping((prev) => ({
+						...prev,
+						[header]: column,
+					}));
+				}}
+				onImport={handleImport}
+				onReset={resetImportDrawer}
+			/>
 		</section>
 	);
 }
