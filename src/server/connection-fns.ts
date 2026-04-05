@@ -40,6 +40,15 @@ type DeleteConnectionResult =
 	| { success: true; deleted: boolean }
 	| { success: false; error: string };
 
+type UpdateConnectionInput = DbCredentials & {
+	id: number;
+	name: string;
+};
+
+type UpdateConnectionResult =
+	| { success: true }
+	| { success: false; error: string };
+
 export const saveConnectionFn = createServerFn({ method: "POST" })
 	.inputValidator((connection: SaveConnectionInput) => connection)
 	.handler(async ({ data: connection }): Promise<SaveConnectionResult> => {
@@ -140,6 +149,66 @@ export const deleteConnectionFn = createServerFn({ method: "POST" })
 			return {
 				success: true,
 				deleted: result.changes > 0,
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+
+			return {
+				success: false,
+				error: message,
+			};
+		}
+	});
+
+export const updateConnectionFn = createServerFn({ method: "POST" })
+	.inputValidator((input: UpdateConnectionInput) => input)
+	.handler(async ({ data: connection }): Promise<UpdateConnectionResult> => {
+		try {
+			const result = db
+				.query(
+					`
+          UPDATE saved_connections
+          SET
+            name = ?,
+            driver = ?,
+            host = ?,
+            port = ?,
+            user = ?,
+            password = ?,
+            database_name = ?,
+            use_ssh = ?,
+            ssh_host = ?,
+            ssh_port = ?,
+            ssh_user = ?,
+            ssh_private_key = ?
+          WHERE id = ?
+        `,
+				)
+				.run(
+					connection.name,
+					connection.driver,
+					connection.host ?? null,
+					connection.port ?? null,
+					connection.user ?? null,
+					connection.password ?? null,
+					connection.database ?? null,
+					connection.useSsh ? 1 : 0,
+					connection.sshHost ?? null,
+					connection.sshPort ?? null,
+					connection.sshUser ?? null,
+					connection.sshPrivateKey ?? null,
+					connection.id,
+				);
+
+			if (result.changes === 0) {
+				return {
+					success: false,
+					error: "Connection not found",
+				};
+			}
+
+			return {
+				success: true,
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";

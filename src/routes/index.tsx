@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, RefreshCw, Save, Shield, Trash2, Zap } from "lucide-react";
+import { Plus, RefreshCw, Save, Shield, Trash2, Zap, Edit3, FilePlus } from "lucide-react";
 import { type SubmitEvent, useEffect, useState } from "react";
 
 import {
@@ -32,6 +32,7 @@ import {
 	getSavedConnectionsFn,
 	type SavedConnection,
 	saveConnectionFn,
+	updateConnectionFn,
 } from "../server/connection-fns";
 
 export const Route = createFileRoute("/")({ component: App });
@@ -58,6 +59,9 @@ function App() {
 		success: boolean;
 		message: string;
 	} | null>(null);
+	const [editingConnectionId, setEditingConnectionId] = useState<number | null>(
+		null,
+	);
 
 	const savedConnectionsQuery = useQuery({
 		queryKey: savedConnectionsQueryKey,
@@ -94,6 +98,15 @@ function App() {
 				throw new Error(data.error);
 			}
 			return data;
+		},
+	});
+
+	const updateConnectionMutation = useMutation({
+		mutationFn: updateConnectionFn,
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: savedConnectionsQueryKey,
+			});
 		},
 	});
 
@@ -137,6 +150,7 @@ function App() {
 				: "postgres";
 
 		setActiveConnection(connection);
+		setEditingConnectionId(connection.id);
 
 		setConnectionName(connection.name);
 		setCredentials({
@@ -152,6 +166,7 @@ function App() {
 			sshUser: connection.ssh_user ?? "",
 			sshPrivateKey: connection.ssh_private_key ?? "",
 		});
+		setStatus(null);
 	};
 
 	const handleDeleteConnection = async (id: number) => {
@@ -162,6 +177,9 @@ function App() {
 					if (response.success) {
 						if (activeConnection?.id === id) {
 							setActiveConnection(null);
+						}
+						if (editingConnectionId === id) {
+							setEditingConnectionId(null);
 						}
 
 						setStatus({ success: true, message: "Connection deleted." });
@@ -180,31 +198,72 @@ function App() {
 			return;
 		}
 
-		saveConnectionMutation.mutate(
-			{
-				data: {
-					name: connectionName,
-					...credentials,
-					useSsh: credentials.useSsh ?? false,
-					sshHost: credentials.useSsh ? credentials.sshHost : undefined,
-					sshPort: credentials.useSsh ? credentials.sshPort : undefined,
-					sshUser: credentials.useSsh ? credentials.sshUser : undefined,
-					sshPrivateKey: credentials.useSsh
-						? credentials.sshPrivateKey
-						: undefined,
-				},
-			},
-			{
-				onSuccess: (response) => {
-					if (response.success) {
-						setStatus({ success: true, message: "Connection saved." });
-						return;
-					}
+		const connectionData = {
+			name: connectionName,
+			...credentials,
+			useSsh: credentials.useSsh ?? false,
+			sshHost: credentials.useSsh ? credentials.sshHost : undefined,
+			sshPort: credentials.useSsh ? credentials.sshPort : undefined,
+			sshUser: credentials.useSsh ? credentials.sshUser : undefined,
+			sshPrivateKey: credentials.useSsh ? credentials.sshPrivateKey : undefined,
+		};
 
-					setStatus({ success: false, message: response.error });
+		if (editingConnectionId !== null) {
+			updateConnectionMutation.mutate(
+				{
+					data: {
+						id: editingConnectionId,
+						...connectionData,
+					},
 				},
-			},
-		);
+				{
+					onSuccess: (response) => {
+						if (response.success) {
+							setStatus({ success: true, message: "Connection updated." });
+							return;
+						}
+
+						setStatus({ success: false, message: response.error });
+					},
+				},
+			);
+		} else {
+			saveConnectionMutation.mutate(
+				{
+					data: connectionData,
+				},
+				{
+					onSuccess: (response) => {
+						if (response.success) {
+							setStatus({ success: true, message: "Connection saved." });
+							return;
+						}
+
+						setStatus({ success: false, message: response.error });
+					},
+				},
+			);
+		}
+	};
+
+	const handleNewConnection = () => {
+		setEditingConnectionId(null);
+		setConnectionName("");
+		setCredentials({
+			driver: "postgres",
+			host: "",
+			port: undefined,
+			user: "",
+			password: "",
+			database: "",
+			useSsh: false,
+			sshHost: "",
+			sshPort: 22,
+			sshUser: "",
+			sshPrivateKey: "",
+			sshPassword: "",
+		});
+		setStatus(null);
 	};
 
 	const handleSubmit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -373,11 +432,31 @@ function App() {
 			</div>
 
 			<div className="bg-card border-2 border-border p-8 shadow-hardware mt-12 w-full max-w-2xl mx-auto">
-				<div className="mb-6 border-b-2 border-border pb-4">
+				<div className="mb-6 border-b-2 border-border pb-4 flex items-center justify-between">
 					<h2 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3 text-foreground">
-						<Plus className="w-6 h-6 border-2 border-border bg-secondary" />
-						INITIALIZE_NEW_NODE
+						{editingConnectionId !== null ? (
+							<>
+								<Edit3 className="w-6 h-6 border-2 border-primary bg-primary/20" />
+								MODIFY_NODE
+							</>
+						) : (
+							<>
+								<Plus className="w-6 h-6 border-2 border-border bg-secondary" />
+								INITIALIZE_NEW_NODE
+							</>
+						)}
 					</h2>
+					{editingConnectionId !== null && (
+						<Button
+							type="button"
+							variant="outline"
+							onClick={handleNewConnection}
+							className="flex items-center gap-2"
+						>
+							<FilePlus className="w-4 h-4" />
+							NEW_CONNECTION
+						</Button>
+					)}
 				</div>
 
 				<Form onSubmit={handleSubmit}>
@@ -713,7 +792,8 @@ function App() {
 								type="submit"
 								disabled={
 									testConnectionMutation.isPending ||
-									saveConnectionMutation.isPending
+									saveConnectionMutation.isPending ||
+									updateConnectionMutation.isPending
 								}
 								className="flex-1 h-16 py-4"
 							>
@@ -727,16 +807,24 @@ function App() {
 								className="flex-2 h-16 py-4 text-lg flex items-center gap-3"
 								disabled={
 									saveConnectionMutation.isPending ||
+									updateConnectionMutation.isPending ||
 									testConnectionMutation.isPending
 								}
 								onClick={() => {
 									void handleSaveConnection();
 								}}
 							>
-								<Save className="w-6 h-6" />
-								{saveConnectionMutation.isPending
+								{editingConnectionId !== null ? (
+									<Edit3 className="w-6 h-6" />
+								) : (
+									<Save className="w-6 h-6" />
+								)}
+								{saveConnectionMutation.isPending ||
+								updateConnectionMutation.isPending
 									? "WRITING..."
-									: "SAVE_CONFIGURATION"}
+									: editingConnectionId !== null
+										? "UPDATE_CONFIGURATION"
+										: "SAVE_CONFIGURATION"}
 							</Button>
 						</div>
 					</div>
