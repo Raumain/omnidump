@@ -117,7 +117,6 @@ export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
 					try {
 						const fullPath = `${DUMPS_DIRECTORY}/${filePath}`;
 						const stats = statSync(fullPath);
-						console.log(stats);
 						const fileName = filePath.split("/").pop() ?? filePath;
 
 						return {
