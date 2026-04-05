@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, RefreshCw, Save, Shield, Trash2, Zap, Edit3, FilePlus } from "lucide-react";
+import {
+	Edit3,
+	FilePlus,
+	Plus,
+	RefreshCw,
+	Save,
+	Shield,
+	Trash2,
+	Zap,
+} from "lucide-react";
 import { type SubmitEvent, useEffect, useState } from "react";
 
 import {
@@ -62,6 +71,16 @@ function App() {
 	const [editingConnectionId, setEditingConnectionId] = useState<number | null>(
 		null,
 	);
+
+	useEffect(() => {
+		if (!status) return;
+
+		const timer = setTimeout(() => {
+			setStatus(null);
+		}, 2000);
+
+		return () => clearTimeout(timer);
+	}, [status]);
 
 	const savedConnectionsQuery = useQuery({
 		queryKey: savedConnectionsQueryKey,
@@ -281,7 +300,7 @@ function App() {
 	};
 
 	return (
-		<section className="mx-auto flex w-full max-w-6xl flex-col gap-6 font-mono pb-12">
+		<section className="mx-auto flex w-full flex-col gap-6 font-mono p-6 md:p-10 pb-12">
 			<div className="border-b-2 border-border pb-4 mb-8">
 				<h1 className="text-3xl font-black uppercase tracking-widest text-primary">
 					SYSTEM_PATCHBAY

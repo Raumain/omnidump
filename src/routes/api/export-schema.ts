@@ -3,10 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { DbCredentials } from "../../lib/db/connection";
 import type { SavedConnection } from "../../server/connection-fns";
 
-type ExportFormat = "json" | "dbml";
+type ExportFormat = "json" | "dbml" | "sql";
 
 const isExportFormat = (value: string | null): value is ExportFormat =>
-	value === "json" || value === "dbml";
+	value === "json" || value === "dbml" || value === "sql";
 
 const toDbCredentials = (connection: SavedConnection): DbCredentials => {
 	const normalizedDriver: DbCredentials["driver"] =
@@ -24,6 +24,58 @@ const toDbCredentials = (connection: SavedConnection): DbCredentials => {
 		password: connection.password ?? undefined,
 		database: connection.database_name ?? undefined,
 	};
+};
+
+const requireValue = (
+	value: string | number | undefined,
+	label: string,
+): string => {
+	if (value === undefined || value === null || String(value).length === 0) {
+		throw new Error(`Missing required credential: ${label}`);
+	}
+	return String(value);
+};
+
+const buildSchemaDumpCommand = (credentials: DbCredentials): string[] => {
+	if (credentials.driver === "postgres") {
+		const user = requireValue(credentials.user, "user");
+		const password = requireValue(credentials.password, "password");
+		const host = requireValue(credentials.host, "host");
+		const port = requireValue(credentials.port, "port");
+		const database = requireValue(credentials.database, "database");
+
+		return [
+			"pg_dump",
+			"--no-owner",
+			"--no-privileges",
+			"-s",
+			`postgresql://${user}:${password}@${host}:${port}/${database}`,
+		];
+	}
+
+	if (credentials.driver === "mysql") {
+		const host = requireValue(credentials.host, "host");
+		const port = requireValue(credentials.port, "port");
+		const user = requireValue(credentials.user, "user");
+		const password = requireValue(credentials.password, "password");
+		const database = requireValue(credentials.database, "database");
+
+		return [
+			"mysqldump",
+			"-h",
+			host,
+			"-P",
+			port,
+			"-u",
+			user,
+			`-p${password}`,
+			database,
+			"--no-data",
+		];
+	}
+
+	const database = requireValue(credentials.database, "database");
+	return ["sqlite3", database, ".schema"];
 };
 
 export const Route = createFileRoute("/api/export-schema" as never)({
@@ -49,7 +101,7 @@ export const Route = createFileRoute("/api/export-schema" as never)({
 
 				if (!isExportFormat(formatParam)) {
 					return new Response(
-						"Invalid format query parameter. Use json or dbml.",
+						"Invalid format query parameter. Use json, dbml, or sql.",
 						{
 							status: 400,
 						},
@@ -60,6 +112,36 @@ export const Route = createFileRoute("/api/export-schema" as never)({
 
 				if (!connection) {
 					return new Response("Connection not found.", { status: 404 });
+				}
+
+				// For SQL format, use native database tools
+				if (formatParam === "sql") {
+					const credentials = toDbCredentials(connection);
+					const commandArgs = buildSchemaDumpCommand(credentials);
+
+					const proc = Bun.spawn(commandArgs, {
+						stdout: "pipe",
+						stderr: "pipe",
+						stdin: "ignore",
+					});
+
+					const exitCode = await proc.exited;
+
+					if (exitCode !== 0) {
+						const errorText = await new Response(proc.stderr).text();
+						return new Response(`Schema dump failed: ${errorText}`, {
+							status: 500,
+						});
+					}
+
+					const sqlContent = await new Response(proc.stdout).text();
+
+					return new Response(sqlContent, {
+						headers: {
+							"Content-Type": "application/sql",
+							"Content-Disposition": 'attachment; filename="schema.sql"',
+						},
+					});
 				}
 
 				const db = getKyselyInstance(toDbCredentials(connection));

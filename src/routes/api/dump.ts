@@ -3,10 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { DbCredentials } from "../../lib/db/connection";
 import type { SavedConnection } from "../../server/connection-fns";
 
-type DumpType = "schema" | "data" | "both";
+type DumpType = "data" | "both";
 
 const isDumpType = (value: string | null): value is DumpType =>
-	value === "schema" || value === "data" || value === "both";
+	value === "data" || value === "both";
 
 const toDbCredentials = (connection: SavedConnection): DbCredentials => {
 	const normalizedDriver: DbCredentials["driver"] =
@@ -44,10 +44,6 @@ const buildCommandArgs = (
 	if (credentials.driver === "postgres") {
 		const commandArgs = ["pg_dump", "--no-owner", "--no-privileges"];
 
-		if (dumpType === "schema") {
-			commandArgs.push("-s");
-		}
-
 		if (dumpType === "data") {
 			commandArgs.push("-a");
 		}
@@ -84,10 +80,6 @@ const buildCommandArgs = (
 			database,
 		];
 
-		if (dumpType === "schema") {
-			commandArgs.push("--no-data");
-		}
-
 		if (dumpType === "data") {
 			commandArgs.push("--no-create-info");
 		}
@@ -97,7 +89,7 @@ const buildCommandArgs = (
 
 	const database = requireValue(credentials.database, "database");
 
-	return ["sqlite3", database, dumpType === "schema" ? ".schema" : ".dump"];
+	return ["sqlite3", database, ".dump"];
 };
 
 export const Route = createFileRoute("/api/dump" as never)({
@@ -132,12 +124,7 @@ export const Route = createFileRoute("/api/dump" as never)({
 
 					const credentials = toDbCredentials(connection);
 					const dirPath = `./exports/dumps/${connection.name || "default"}/default`;
-					const dumpPrefix =
-						dumpType === "schema"
-							? "schema"
-							: dumpType === "data"
-								? "data"
-								: "dump";
+					const dumpPrefix = dumpType === "data" ? "data" : "dump";
 					const filePath = `${dirPath}/${dumpPrefix}_${Date.now()}.sql`;
 					mkdirSync(dirPath, { recursive: true });
 

@@ -269,7 +269,7 @@ function ImportPage() {
 
 	if (!activeConnection) {
 		return (
-			<main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-6 md:p-10 font-mono">
+			<section className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-6 md:p-10 font-mono">
 				<Card className="w-full max-w-md bg-card border-2 border-border p-6 shadow-hardware rounded-none">
 					<CardHeader>
 						<CardTitle className="text-2xl font-black uppercase tracking-wider text-primary">
@@ -285,12 +285,12 @@ function ImportPage() {
 						</Button>
 					</CardContent>
 				</Card>
-			</main>
+			</section>
 		);
 	}
 
 	return (
-		<main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 p-6 md:p-10 font-mono">
+		<section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 p-6 md:p-10 font-mono">
 			<div className="flex flex-col gap-2 bg-card p-6 border-2 border-border shadow-hardware">
 				<h1 className="text-3xl font-black uppercase tracking-wider text-primary">
 					DATA_INJECTION_MODULE
@@ -535,6 +535,6 @@ function ImportPage() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-		</main>
+		</section>
 	);
 }
