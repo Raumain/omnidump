@@ -22,27 +22,27 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	AlertDialogTrigger,
-} from "../components/ui/alert-dialog";
-import { Button } from "../components/ui/button";
-import { Form, FormControl, FormItem, FormLabel } from "../components/ui/form";
-import { Input } from "../components/ui/input";
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormItem, FormLabel } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "../components/ui/select";
-import { useActiveConnection } from "../hooks/use-active-connection.tsx";
-import type { DbCredentials } from "../lib/db/connection";
-import { savedConnectionsQueryKey } from "../lib/query-keys.ts";
+} from "@/components/ui/select";
+import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
+import type { DbCredentials } from "@/lib/db/connection";
+import { savedConnectionsQueryKey } from "@/lib/query-keys.ts";
 import {
 	deleteConnectionFn,
 	getSavedConnectionsFn,
 	type SavedConnection,
 	saveConnectionFn,
 	updateConnectionFn,
-} from "../server/connection-fns";
+} from "@/server/connection-fns";
 
 export const Route = createFileRoute("/")({ component: App });
 

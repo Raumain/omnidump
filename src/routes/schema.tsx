@@ -14,6 +14,8 @@ import {
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import Loader from "@/components/Loader.tsx";
+
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -24,8 +26,8 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	AlertDialogTrigger,
-} from "../components/ui/alert-dialog";
-import { Button } from "../components/ui/button";
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import {
 	Drawer,
 	DrawerBody,
@@ -35,16 +37,16 @@ import {
 	DrawerFooter,
 	DrawerHeader,
 	DrawerTitle,
-} from "../components/ui/drawer";
-import { Input } from "../components/ui/input";
+} from "@/components/ui/drawer";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "../components/ui/select";
-import { useActiveConnection } from "../hooks/use-active-connection.tsx";
+} from "@/components/ui/select";
+import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
 import {
 	clearTableDataFn,
 	dropAllTablesFn,
@@ -52,7 +54,7 @@ import {
 	getDatabaseSchemaFn,
 	restoreDumpFn,
 	wipeAllDataFn,
-} from "../server/schema-fns";
+} from "@/server/schema-fns";
 
 export const Route = createFileRoute("/schema")({ component: SchemaPage });
 
@@ -81,7 +83,7 @@ function SchemaPage() {
 	const [rejectFileName, setRejectFileName] = useState<string | null>(null);
 	const csvFileInputRef = useRef<HTMLInputElement>(null);
 
-	const { activeConnection } = useActiveConnection();
+	const { activeConnection, isHydrated } = useActiveConnection();
 
 	const schemaQuery = useQuery({
 		queryKey: ["schema", activeConnection?.id],
@@ -567,6 +569,10 @@ function SchemaPage() {
 		resetImportDrawer();
 		setIsImportDrawerOpen(true);
 	};
+
+	if (!isHydrated) {
+		return <Loader />;
+	}
 
 	if (!activeConnection) {
 		return (

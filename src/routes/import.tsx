@@ -3,6 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, Zap } from "lucide-react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
+import Loader from "@/components/Loader.tsx";
+
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -11,24 +13,19 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-} from "../components/ui/alert-dialog";
-import { Button } from "../components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-} from "../components/ui/card";
-import { Input } from "../components/ui/input";
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "../components/ui/select";
-import { useActiveConnection } from "../hooks/use-active-connection.tsx";
-import { getDatabaseSchemaFn } from "../server/schema-fns";
+} from "@/components/ui/select";
+import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
+import { getDatabaseSchemaFn } from "@/server/schema-fns";
 
 export const Route = createFileRoute("/import")({ component: ImportPage });
 
@@ -45,7 +42,7 @@ function ImportPage() {
 	const [rejectFileName, setRejectFileName] = useState<string | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
-	const { activeConnection } = useActiveConnection();
+	const { activeConnection, isHydrated } = useActiveConnection();
 
 	const schemaQuery = useQuery({
 		queryKey: ["schema", activeConnection?.id],
@@ -266,6 +263,10 @@ function ImportPage() {
 			mapping,
 		});
 	};
+
+	if (!isHydrated) {
+		return <Loader />;
+	}
 
 	if (!activeConnection) {
 		return (
