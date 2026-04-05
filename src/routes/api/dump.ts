@@ -1,11 +1,18 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
 import type { DbCredentials } from "../../lib/db/connection";
 import type { SavedConnection } from "../../server/connection-fns";
 
 type DumpType = "data" | "both";
 
-const isDumpType = (value: string | null): value is DumpType =>
+type DumpRequestBody = {
+	connectionId: number;
+	type?: DumpType;
+	tables?: string[];
+	download?: boolean;
+};
+
+const isDumpType = (value: string | null | undefined): value is DumpType =>
 	value === "data" || value === "both";
 
 const toDbCredentials = (connection: SavedConnection): DbCredentials => {
@@ -40,12 +47,20 @@ const requireValue = (
 const buildCommandArgs = (
 	credentials: DbCredentials,
 	dumpType: DumpType,
+	tables?: string[],
 ): string[] => {
 	if (credentials.driver === "postgres") {
 		const commandArgs = ["pg_dump", "--no-owner", "--no-privileges"];
 
 		if (dumpType === "data") {
 			commandArgs.push("-a");
+		}
+
+		// Add table selection flags for PostgreSQL
+		if (tables && tables.length > 0) {
+			for (const table of tables) {
+				commandArgs.push("-t", table);
+			}
 		}
 
 		const user = requireValue(credentials.user, "user");
@@ -84,11 +99,19 @@ const buildCommandArgs = (
 			commandArgs.push("--no-create-info");
 		}
 
+		// Add table names for MySQL (positional args after database name)
+		if (tables && tables.length > 0) {
+			commandArgs.push(...tables);
+		}
+
 		return commandArgs;
 	}
 
+	// SQLite
 	const database = requireValue(credentials.database, "database");
 
+	// SQLite doesn't support selective dump natively, dump all tables
+	// For selective dumps, we'd need a more complex approach with .schema + SELECT
 	return ["sqlite3", database, ".dump"];
 };
 
@@ -101,14 +124,25 @@ export const Route = createFileRoute("/api/dump" as never)({
 						"../../server/saved-connections"
 					);
 
-					const body = await request.json().catch(() => ({}));
+					const body = (await request
+						.json()
+						.catch(() => ({}))) as Partial<DumpRequestBody>;
 					const connectionIdParam = body.connectionId;
 					const dumpTypeParam = body.type;
+					const tablesParam = body.tables;
+					const downloadParam = body.download ?? false;
 
 					const connectionId = Number(connectionIdParam);
 					const dumpType: DumpType = isDumpType(dumpTypeParam)
 						? dumpTypeParam
 						: "both";
+
+					// Validate tables array if provided
+					const tables = Array.isArray(tablesParam)
+						? tablesParam.filter(
+								(t): t is string => typeof t === "string" && t.length > 0,
+							)
+						: undefined;
 
 					if (!connectionIdParam || Number.isNaN(connectionId)) {
 						return new Response("Invalid connectionId in body.", {
@@ -125,10 +159,12 @@ export const Route = createFileRoute("/api/dump" as never)({
 					const credentials = toDbCredentials(connection);
 					const dirPath = `./exports/dumps/${connection.name || "default"}/default`;
 					const dumpPrefix = dumpType === "data" ? "data" : "dump";
-					const filePath = `${dirPath}/${dumpPrefix}_${Date.now()}.sql`;
+					const timestamp = Date.now();
+					const fileName = `${dumpPrefix}_${timestamp}.sql`;
+					const filePath = `${dirPath}/${fileName}`;
 					mkdirSync(dirPath, { recursive: true });
 
-					const commandArgs = buildCommandArgs(credentials, dumpType);
+					const commandArgs = buildCommandArgs(credentials, dumpType, tables);
 					const file = Bun.file(filePath);
 					const proc = Bun.spawn(commandArgs, {
 						stdout: file,
@@ -149,10 +185,26 @@ export const Route = createFileRoute("/api/dump" as never)({
 						throw new Error(errorText);
 					}
 
+					// If download requested, return the file content
+					if (downloadParam) {
+						const fileContent = readFileSync(filePath);
+
+						return new Response(fileContent, {
+							status: 200,
+							headers: {
+								"Content-Type": "application/sql",
+								"Content-Disposition": `attachment; filename="${fileName}"`,
+								"X-File-Path": filePath,
+								"X-File-Name": fileName,
+							},
+						});
+					}
+
 					return Response.json({
 						success: true,
 						message: "Native dump saved locally",
 						path: filePath,
+						fileName,
 					});
 				} catch (error) {
 					const message =

@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Loader2 } from "lucide-react";
+import { AlertTriangle, Database, Download, Loader2 } from "lucide-react";
 
 import {
 	AlertDialog,
@@ -23,7 +23,6 @@ import {
 interface ActionsBarProps {
 	connectionId: number;
 	schemaExportFormat: "json" | "dbml" | "sql";
-	dumpType: "data" | "both";
 	isDumping: boolean;
 	isWipingAllData: boolean;
 	isDroppingAllTables: boolean;
@@ -31,9 +30,8 @@ interface ActionsBarProps {
 	isRestoringDump: boolean;
 	isSeeding: boolean;
 	onSchemaExportFormatChange: (format: "json" | "dbml" | "sql") => void;
-	onDumpTypeChange: (type: "data" | "both") => void;
-	onDump: () => void;
-	onOpenRestoreModal: () => void;
+	onOpenDumpModal: () => void;
+	onOpenDumpsDrawer: () => void;
 	onWipeAllData: () => void;
 	onDropAllTables: () => void;
 }
@@ -41,7 +39,6 @@ interface ActionsBarProps {
 export function ActionsBar({
 	connectionId,
 	schemaExportFormat,
-	dumpType,
 	isDumping,
 	isWipingAllData,
 	isDroppingAllTables,
@@ -49,9 +46,8 @@ export function ActionsBar({
 	isRestoringDump,
 	isSeeding,
 	onSchemaExportFormatChange,
-	onDumpTypeChange,
-	onDump,
-	onOpenRestoreModal,
+	onOpenDumpModal,
+	onOpenDumpsDrawer,
 	onWipeAllData,
 	onDropAllTables,
 }: ActionsBarProps) {
@@ -109,54 +105,29 @@ export function ActionsBar({
 				</div>
 
 				{/* Dump SQL */}
-				<div className="flex items-center gap-2 bg-secondary p-2 border-2 border-border">
-					<Select
-						value={dumpType}
-						onValueChange={(value) => {
-							onDumpTypeChange(value as "data" | "both");
-						}}
-					>
-						<SelectTrigger className="w-38 rounded-none border-2 border-border shadow-hardware bg-card text-foreground font-bold uppercase disabled:opacity-50">
-							<SelectValue placeholder="Dump type" />
-						</SelectTrigger>
-						<SelectContent className="rounded-none border-2 border-primary shadow-hardware font-mono bg-card">
-							<SelectItem
-								value="data"
-								className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-							>
-								Data Only
-							</SelectItem>
-							<SelectItem
-								value="both"
-								className="font-bold uppercase rounded-none focus:bg-primary focus:text-primary-foreground cursor-pointer"
-							>
-								Data + Schema
-							</SelectItem>
-						</SelectContent>
-					</Select>
-					<Button
-						type="button"
-						className="hover:bg-neutral-600!"
-						onClick={onDump}
-						disabled={isAnyActionPending}
-					>
-						{isDumping ? (
-							<Loader2 className="animate-spin w-4 h-4 mr-2" />
-						) : (
-							<Download className="w-4 h-4 mr-2" />
-						)}
-						{isDumping ? "Saving..." : "Dump SQL"}
-					</Button>
-				</div>
+				<Button
+					type="button"
+					className="hover:bg-neutral-600!"
+					onClick={onOpenDumpModal}
+					disabled={isAnyActionPending}
+				>
+					{isDumping ? (
+						<Loader2 className="animate-spin w-4 h-4 mr-2" />
+					) : (
+						<Download className="w-4 h-4 mr-2" />
+					)}
+					{isDumping ? "Dumping..." : "Dump SQL"}
+				</Button>
 
-				{/* Restore */}
+				{/* Dumps Management */}
 				<Button
 					type="button"
 					variant="accent"
 					disabled={isAnyActionPending}
-					onClick={onOpenRestoreModal}
+					onClick={onOpenDumpsDrawer}
 				>
-					Restore
+					<Database className="w-4 h-4 mr-2" />
+					Dumps
 				</Button>
 
 				{/* Wipe Data */}

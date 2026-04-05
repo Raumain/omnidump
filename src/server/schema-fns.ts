@@ -1,3 +1,4 @@
+import { rmSync, statSync } from "node:fs";
 import { createServerFn } from "@tanstack/react-start";
 import { Glob } from "bun";
 import { sql } from "kysely";
@@ -98,17 +99,79 @@ const normalizeCredentials = (input: ActiveConnectionInput): DbCredentials => {
 	};
 };
 
+export type DumpFileInfo = {
+	path: string;
+	fileName: string;
+	size: number;
+	createdAt: string;
+};
+
 export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
-	async (): Promise<string[]> => {
+	async (): Promise<DumpFileInfo[]> => {
 		try {
 			const glob = new Glob("**/*.sql");
+			const files = Array.from(glob.scanSync({ cwd: DUMPS_DIRECTORY }));
 
-			return Array.from(glob.scanSync({ cwd: DUMPS_DIRECTORY }));
+			return files
+				.map((filePath) => {
+					try {
+						const fullPath = `${DUMPS_DIRECTORY}/${filePath}`;
+						const stats = statSync(fullPath);
+						console.log(stats);
+						const fileName = filePath.split("/").pop() ?? filePath;
+
+						return {
+							path: filePath,
+							fileName,
+							size: stats.size,
+							createdAt: stats.mtime.toISOString(),
+						};
+					} catch {
+						return null;
+					}
+				})
+				.filter((info): info is DumpFileInfo => info !== null)
+				.sort(
+					(a, b) =>
+						new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+				);
 		} catch {
 			return [];
 		}
 	},
 );
+
+export const deleteDumpFn = createServerFn({ method: "POST" })
+	.inputValidator((input: { filePath: string }) => input)
+	.handler(async ({ data: input }): Promise<MessageServerFnResult> => {
+		const { filePath } = input;
+
+		// Security: Ensure path doesn't escape dumps directory
+		if (filePath.includes("..") || filePath.startsWith("/")) {
+			return {
+				success: false,
+				error: "Invalid file path.",
+			};
+		}
+
+		const fullPath = `${DUMPS_DIRECTORY}/${filePath}`;
+
+		try {
+			rmSync(fullPath, { force: true });
+
+			return {
+				success: true,
+				message: `Dump file deleted: ${filePath}`,
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+
+			return {
+				success: false,
+				error: message,
+			};
+		}
+	});
 
 export const restoreDumpFn = createServerFn({ method: "POST" })
 	.inputValidator((input: RestoreDumpInput) => input)

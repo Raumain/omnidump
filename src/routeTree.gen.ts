@@ -19,6 +19,7 @@ import { Route as ApiExportSchemaRouteImport } from './routes/api/export-schema'
 import { Route as ApiExportCsvRouteImport } from './routes/api/export-csv'
 import { Route as ApiDumpRouteImport } from './routes/api/dump'
 import { Route as ApiDownloadRejectRouteImport } from './routes/api/download-reject'
+import { Route as ApiDownloadDumpRouteImport } from './routes/api/download-dump'
 
 const SchemaRoute = SchemaRouteImport.update({
   id: '/schema',
@@ -70,11 +71,17 @@ const ApiDownloadRejectRoute = ApiDownloadRejectRouteImport.update({
   path: '/api/download-reject',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDownloadDumpRoute = ApiDownloadDumpRouteImport.update({
+  id: '/api/download-dump',
+  path: '/api/download-dump',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/export-csv': typeof ApiExportCsvRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/export-csv': typeof ApiExportCsvRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
+  '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
   '/api/export-csv': typeof ApiExportCsvRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/import'
     | '/schema'
+    | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
     | '/api/export-csv'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/import'
     | '/schema'
+    | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
     | '/api/export-csv'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/import'
     | '/schema'
+    | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
     | '/api/export-csv'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ImportRoute: typeof ImportRoute
   SchemaRoute: typeof SchemaRoute
+  ApiDownloadDumpRoute: typeof ApiDownloadDumpRoute
   ApiDownloadRejectRoute: typeof ApiDownloadRejectRoute
   ApiDumpRoute: typeof ApiDumpRoute
   ApiExportCsvRoute: typeof ApiExportCsvRoute
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDownloadRejectRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/download-dump': {
+      id: '/api/download-dump'
+      path: '/api/download-dump'
+      fullPath: '/api/download-dump'
+      preLoaderRoute: typeof ApiDownloadDumpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -239,6 +259,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ImportRoute: ImportRoute,
   SchemaRoute: SchemaRoute,
+  ApiDownloadDumpRoute: ApiDownloadDumpRoute,
   ApiDownloadRejectRoute: ApiDownloadRejectRoute,
   ApiDumpRoute: ApiDumpRoute,
   ApiExportCsvRoute: ApiExportCsvRoute,

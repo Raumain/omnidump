@@ -9,6 +9,7 @@ import { NoConnectionState } from "@/components/NoConnectionState";
 import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
 import {
 	clearTableDataFn,
+	deleteDumpFn,
 	dropAllTablesFn,
 	getAvailableDumpsFn,
 	getDatabaseSchemaFn,
@@ -17,8 +18,9 @@ import {
 } from "@/server/schema-fns";
 
 import { ActionsBar } from "./_schema/components/ActionsBar";
+import { DumpModal } from "./_schema/components/DumpModal";
+import { DumpsDrawer } from "./_schema/components/DumpsDrawer";
 import { ImportDrawer } from "./_schema/components/ImportDrawer";
-import { RestoreModal } from "./_schema/components/RestoreModal";
 import { SchemaHeader } from "./_schema/components/SchemaHeader";
 import {
 	TableDetail,
@@ -36,9 +38,8 @@ function SchemaPage() {
 	const [schemaExportFormat, setSchemaExportFormat] = useState<
 		"json" | "dbml" | "sql"
 	>("json");
-	const [dumpType, setDumpType] = useState<"data" | "both">("both");
-	const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
-	const [selectedDump, setSelectedDump] = useState<string | null>(null);
+	const [isDumpModalOpen, setIsDumpModalOpen] = useState(false);
+	const [isDumpsDrawerOpen, setIsDumpsDrawerOpen] = useState(false);
 	const [seedCount, setSeedCount] = useState("10");
 
 	// CSV Import drawer state
@@ -72,7 +73,11 @@ function SchemaPage() {
 	});
 
 	const dumpMutation = useMutation({
-		mutationFn: async () => {
+		mutationFn: async (options: {
+			tables: string[];
+			type: "data" | "both";
+			download: boolean;
+		}) => {
 			if (!activeConnection) {
 				throw new Error("No active connection.");
 			}
@@ -84,22 +89,45 @@ function SchemaPage() {
 				},
 				body: JSON.stringify({
 					connectionId: activeConnection.id,
-					type: dumpType,
+					type: options.type,
+					tables: options.tables.length > 0 ? options.tables : undefined,
+					download: options.download,
 				}),
 			});
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
 				throw new Error(
-					errorData.message || "Failed to execute dump on server.",
+					errorData.message ||
+						errorData.error ||
+						"Failed to execute dump on server.",
 				);
+			}
+
+			// If download requested, trigger browser download
+			if (options.download) {
+				const blob = await response.blob();
+				const fileName = response.headers.get("X-File-Name") || "dump.sql";
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.href = url;
+				a.download = fileName;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+				return { fileName, downloaded: true };
 			}
 
 			return response.json();
 		},
 		onSuccess: (data) => {
+			setIsDumpModalOpen(false);
+			dumpsQuery.refetch();
 			toast.success("Dump saved", {
-				description: `File saved: ${data.fileName ?? "dump.sql"}`,
+				description: data.downloaded
+					? `File downloaded: ${data.fileName}`
+					: `File saved: ${data.fileName ?? "dump.sql"}`,
 			});
 		},
 		onError: (error) => {
@@ -268,8 +296,6 @@ function SchemaPage() {
 		},
 		onSuccess: () => {
 			schemaQuery.refetch();
-			setIsRestoreModalOpen(false);
-			setSelectedDump(null);
 			toast.success("Dump restored", {
 				description: "The database has been restored from the selected dump.",
 			});
@@ -280,6 +306,39 @@ function SchemaPage() {
 			});
 		},
 	});
+
+	const deleteDumpMutation = useMutation({
+		mutationFn: async (filePath: string) => {
+			const result = await deleteDumpFn({ data: { filePath } });
+
+			if (!result.success) {
+				throw new Error(result.error);
+			}
+
+			return result;
+		},
+		onSuccess: () => {
+			dumpsQuery.refetch();
+			toast.success("Dump deleted", {
+				description: "The dump file has been removed.",
+			});
+		},
+		onError: (error) => {
+			toast.error("Delete failed", {
+				description: error instanceof Error ? error.message : "Unknown error",
+			});
+		},
+	});
+
+	const handleDownloadDump = (filePath: string) => {
+		const url = `/api/download-dump?path=${encodeURIComponent(filePath)}`;
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = filePath.split("/").pop() ?? "dump.sql";
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+	};
 
 	const seedMutation = useMutation({
 		mutationFn: async (input: { tableName: string; count: number }) => {
@@ -553,7 +612,6 @@ function SchemaPage() {
 			<ActionsBar
 				connectionId={activeConnection.id}
 				schemaExportFormat={schemaExportFormat}
-				dumpType={dumpType}
 				isDumping={dumpMutation.isPending}
 				isWipingAllData={wipeAllDataMutation.isPending}
 				isDroppingAllTables={dropAllTablesMutation.isPending}
@@ -561,9 +619,8 @@ function SchemaPage() {
 				isRestoringDump={restoreDumpMutation.isPending}
 				isSeeding={seedMutation.isPending}
 				onSchemaExportFormatChange={setSchemaExportFormat}
-				onDumpTypeChange={setDumpType}
-				onDump={() => dumpMutation.mutate()}
-				onOpenRestoreModal={() => setIsRestoreModalOpen(true)}
+				onOpenDumpModal={() => setIsDumpModalOpen(true)}
+				onOpenDumpsDrawer={() => setIsDumpsDrawerOpen(true)}
 				onWipeAllData={() => wipeAllDataMutation.mutate()}
 				onDropAllTables={() => dropAllTablesMutation.mutate()}
 			/>
@@ -628,18 +685,25 @@ function SchemaPage() {
 				</div>
 			) : null}
 
-			<RestoreModal
-				isOpen={isRestoreModalOpen}
+			<DumpModal
+				isOpen={isDumpModalOpen}
+				tables={tables}
+				isDumping={dumpMutation.isPending}
+				onOpenChange={setIsDumpModalOpen}
+				onDump={(options) => dumpMutation.mutate(options)}
+			/>
+
+			<DumpsDrawer
+				isOpen={isDumpsDrawerOpen}
 				dumps={dumpsQuery.data ?? []}
-				selectedDump={selectedDump}
+				isLoading={dumpsQuery.isLoading || dumpsQuery.isRefetching}
 				isRestoring={restoreDumpMutation.isPending}
-				onOpenChange={setIsRestoreModalOpen}
-				onSelectDump={setSelectedDump}
-				onRestore={() => {
-					if (selectedDump) {
-						restoreDumpMutation.mutate(selectedDump);
-					}
-				}}
+				isDeleting={deleteDumpMutation.isPending}
+				onOpenChange={setIsDumpsDrawerOpen}
+				onRefresh={() => dumpsQuery.refetch()}
+				onRestore={(filePath) => restoreDumpMutation.mutate(filePath)}
+				onDownload={handleDownloadDump}
+				onDelete={(filePath) => deleteDumpMutation.mutate(filePath)}
 			/>
 
 			<ImportDrawer
