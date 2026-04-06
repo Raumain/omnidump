@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { type SubmitEvent, useEffect, useState } from "react";
 
 import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
+import { normalizeDriver } from "@/lib/credentials";
 import type { DbCredentials } from "@/lib/db/connection";
 import { savedConnectionsQueryKey } from "@/lib/query-keys.ts";
 import {
@@ -111,15 +112,9 @@ function App() {
 			return;
 		}
 
-		const driver = activeConnection.driver;
-		const normalizedDriver: DbCredentials["driver"] =
-			driver === "mysql" || driver === "sqlite" || driver === "postgres"
-				? driver
-				: "postgres";
-
 		setConnectionName(activeConnection.name);
 		setCredentials({
-			driver: normalizedDriver,
+			driver: normalizeDriver(activeConnection.driver),
 			host: activeConnection.host ?? "",
 			port: activeConnection.port ?? undefined,
 			user: activeConnection.user ?? "",
@@ -134,18 +129,12 @@ function App() {
 	}, [activeConnection]);
 
 	const handleSelectConnection = (connection: SavedConnection) => {
-		const driver = connection.driver;
-		const normalizedDriver: DbCredentials["driver"] =
-			driver === "mysql" || driver === "sqlite" || driver === "postgres"
-				? driver
-				: "postgres";
-
 		setActiveConnection(connection);
 		setEditingConnectionId(connection.id);
 
 		setConnectionName(connection.name);
 		setCredentials({
-			driver: normalizedDriver,
+			driver: normalizeDriver(connection.driver),
 			host: connection.host ?? "",
 			port: connection.port ?? undefined,
 			user: connection.user ?? "",
@@ -271,6 +260,27 @@ function App() {
 		});
 	};
 
+	const connectionFormState = {
+		connectionName,
+		credentials,
+		editingConnectionId,
+		status,
+	};
+
+	const connectionFormFlags = {
+		isTesting: testConnectionMutation.isPending,
+		isSaving: saveConnectionMutation.isPending,
+		isUpdating: updateConnectionMutation.isPending,
+	};
+
+	const connectionFormHandlers = {
+		onConnectionNameChange: setConnectionName,
+		onCredentialsChange: setCredentials,
+		onNewConnection: handleNewConnection,
+		onSaveConnection: handleSaveConnection,
+		onTestConnection: handleSubmit,
+	};
+
 	return (
 		<section className="mx-auto flex w-full flex-col gap-6 font-mono p-6 md:p-10 pb-12">
 			<div className="border-b-2 border-border pb-4 mb-8">
@@ -320,18 +330,9 @@ function App() {
 			</div>
 
 			<ConnectionForm
-				connectionName={connectionName}
-				credentials={credentials}
-				editingConnectionId={editingConnectionId}
-				status={status}
-				isTesting={testConnectionMutation.isPending}
-				isSaving={saveConnectionMutation.isPending}
-				isUpdating={updateConnectionMutation.isPending}
-				onConnectionNameChange={setConnectionName}
-				onCredentialsChange={setCredentials}
-				onNewConnection={handleNewConnection}
-				onSaveConnection={handleSaveConnection}
-				onTestConnection={handleSubmit}
+				state={connectionFormState}
+				flags={connectionFormFlags}
+				handlers={connectionFormHandlers}
 			/>
 		</section>
 	);

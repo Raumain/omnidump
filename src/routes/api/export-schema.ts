@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import type { DbCredentials } from "../../lib/db/connection";
+import { extractErrorMessage } from "../../lib/errors";
 import type { SavedConnection } from "../../server/connection-fns";
 
 type ExportFormat = "json" | "dbml" | "sql";
@@ -178,10 +179,7 @@ export const Route = createFileRoute("/api/export-schema" as never)({
 						},
 					});
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
-
-					return new Response(message, { status: 500 });
+					return new Response(extractErrorMessage(error), { status: 500 });
 				} finally {
 					await db.destroy();
 				}

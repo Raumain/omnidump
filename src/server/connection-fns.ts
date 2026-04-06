@@ -1,15 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import type { DbCredentials } from "../lib/db/connection";
+import { extractErrorMessage } from "../lib/errors";
+import type { Result } from "../lib/result";
 import { db } from "./internal-db";
 
 type SaveConnectionInput = DbCredentials & {
 	name: string;
 };
 
-type SaveConnectionResult =
-	| { success: true; id: number }
-	| { success: false; error: string };
+type SaveConnectionResult = Result<{ id: number }>;
 
 export type SavedConnection = {
 	id: number;
@@ -28,26 +28,20 @@ export type SavedConnection = {
 	created_at: string;
 };
 
-type GetSavedConnectionsResult =
-	| { success: true; connections: SavedConnection[] }
-	| { success: false; error: string };
+type GetSavedConnectionsResult = Result<{ connections: SavedConnection[] }>;
 
 type DeleteConnectionInput = {
 	id: number;
 };
 
-type DeleteConnectionResult =
-	| { success: true; deleted: boolean }
-	| { success: false; error: string };
+type DeleteConnectionResult = Result<{ deleted: boolean }>;
 
 type UpdateConnectionInput = DbCredentials & {
 	id: number;
 	name: string;
 };
 
-type UpdateConnectionResult =
-	| { success: true }
-	| { success: false; error: string };
+type UpdateConnectionResult = Result<object>;
 
 export const saveConnectionFn = createServerFn({ method: "POST" })
 	.inputValidator((connection: SaveConnectionInput) => connection)
@@ -96,11 +90,9 @@ export const saveConnectionFn = createServerFn({ method: "POST" })
 						: result.lastInsertRowid,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	});
@@ -123,11 +115,9 @@ export const getSavedConnectionsFn = createServerFn({ method: "GET" }).handler(
 				connections,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	},
@@ -151,11 +141,9 @@ export const deleteConnectionFn = createServerFn({ method: "POST" })
 				deleted: result.changes > 0,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	});
@@ -211,11 +199,9 @@ export const updateConnectionFn = createServerFn({ method: "POST" })
 				success: true,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	});

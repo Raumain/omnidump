@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import type { DbCredentials } from "../../lib/db/connection";
+import { extractErrorMessage } from "../../lib/errors";
 import type { SavedConnection } from "../../server/connection-fns";
 
 const toDbCredentials = (connection: SavedConnection): DbCredentials => {
@@ -99,10 +100,7 @@ export const Route = createFileRoute("/api/export-csv" as never)({
 						},
 					});
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
-
-					return new Response(message, { status: 500 });
+					return new Response(extractErrorMessage(error), { status: 500 });
 				} finally {
 					await db.destroy();
 				}

@@ -27,31 +27,37 @@ interface ColumnInfo {
 	isNullable: boolean;
 }
 
-interface TableDetailProps {
+interface TableDetailData {
 	tableName: string;
 	columns: ColumnInfo[];
+}
+
+interface TableDetailState {
 	seedCount: string;
 	isSeeding: boolean;
 	isClearingTable: boolean;
 	isImporting: boolean;
+}
+
+interface TableDetailHandlers {
 	onSeedCountChange: (count: string) => void;
 	onSeed: (tableName: string, count: number) => void;
 	onOpenImportDrawer: () => void;
 	onClearTable: (tableName: string) => void;
 }
 
-export function TableDetail({
-	tableName,
-	columns,
-	seedCount,
-	isSeeding,
-	isClearingTable,
-	isImporting,
-	onSeedCountChange,
-	onSeed,
-	onOpenImportDrawer,
-	onClearTable,
-}: TableDetailProps) {
+interface TableDetailProps {
+	table: TableDetailData;
+	state: TableDetailState;
+	handlers: TableDetailHandlers;
+}
+
+export function TableDetail({ table, state, handlers }: TableDetailProps) {
+	const { tableName, columns } = table;
+	const { seedCount, isSeeding, isClearingTable, isImporting } = state;
+	const { onSeedCountChange, onSeed, onOpenImportDrawer, onClearTable } =
+		handlers;
+
 	return (
 		<>
 			<div className="p-4 border-b-2 border-border flex items-center justify-between">

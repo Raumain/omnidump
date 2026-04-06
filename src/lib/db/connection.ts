@@ -19,16 +19,12 @@ import {
 	type TransactionSettings,
 	validateTransactionSettings,
 } from "kysely";
+import { type DbDriver, isDbDriver } from "../constants";
 
-export type DbDriver = "postgres" | "mysql" | "sqlite";
+export type { DbDriver };
+export { isDbDriver };
 
-export interface DbCredentials {
-	driver: DbDriver;
-	host?: string;
-	port?: number;
-	user?: string;
-	password?: string;
-	database?: string;
+export interface SshCredentials {
 	useSsh?: boolean;
 	sshHost?: string;
 	sshPort?: number;
@@ -37,6 +33,43 @@ export interface DbCredentials {
 	sshPassword?: string;
 	sshPassphrase?: string;
 }
+
+interface DbCredentialsBase {
+	driver: DbDriver;
+	database?: string;
+}
+
+interface NetworkDbCredentialsBase extends DbCredentialsBase {
+	host?: string;
+	port?: number;
+	user?: string;
+	password?: string;
+}
+
+export interface PostgresCredentials
+	extends NetworkDbCredentialsBase,
+		SshCredentials {
+	driver: "postgres";
+}
+
+export interface MysqlCredentials
+	extends NetworkDbCredentialsBase,
+		SshCredentials {
+	driver: "mysql";
+}
+
+export interface SqliteCredentials extends DbCredentialsBase, SshCredentials {
+	driver: "sqlite";
+	host?: string;
+	port?: number;
+	user?: string;
+	password?: string;
+}
+
+export type DbCredentials =
+	| PostgresCredentials
+	| MysqlCredentials
+	| SqliteCredentials;
 
 class BunDatabaseConnection implements DatabaseConnection {
 	constructor(private readonly connection: SQL) {}
@@ -131,6 +164,10 @@ const getDialect = (driver: DbDriver, connection: SQL): Dialect => {
 };
 
 export const createConnection = (credentials: DbCredentials): SQL => {
+	if (!isDbDriver(credentials.driver)) {
+		throw new Error(`Unsupported driver: ${String(credentials.driver)}`);
+	}
+
 	if (credentials.driver === "sqlite") {
 		return new SQL({
 			adapter: "sqlite",
