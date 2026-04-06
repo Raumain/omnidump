@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
 import type { DbCredentials } from "../../lib/db/connection";
 import type { SavedConnection } from "../../server/connection-fns";
@@ -10,6 +10,8 @@ type DumpRequestBody = {
 	type?: DumpType;
 	tables?: string[];
 	download?: boolean;
+	anonymize?: boolean;
+	profileId?: number;
 };
 
 const isDumpType = (value: string | null | undefined): value is DumpType =>
@@ -131,6 +133,8 @@ export const Route = createFileRoute("/api/dump" as never)({
 					const dumpTypeParam = body.type;
 					const tablesParam = body.tables;
 					const downloadParam = body.download ?? false;
+					const anonymizeParam = body.anonymize ?? false;
+					const profileIdParam = body.profileId;
 
 					const connectionId = Number(connectionIdParam);
 					const dumpType: DumpType = isDumpType(dumpTypeParam)
@@ -158,11 +162,70 @@ export const Route = createFileRoute("/api/dump" as never)({
 
 					const credentials = toDbCredentials(connection);
 					const dirPath = `./exports/dumps/${connection.name || "default"}/default`;
-					const dumpPrefix = dumpType === "data" ? "data" : "dump";
+					const dumpPrefix = anonymizeParam
+						? "anon"
+						: dumpType === "data"
+							? "data"
+							: "dump";
 					const timestamp = Date.now();
 					const fileName = `${dumpPrefix}_${timestamp}.sql`;
 					const filePath = `${dirPath}/${fileName}`;
 					mkdirSync(dirPath, { recursive: true });
+
+					// If anonymization is requested, use the anonymized dump generator
+					if (anonymizeParam && profileIdParam) {
+						const { getAnonymizationRulesFn } = await import(
+							"../../server/anonymization-fns"
+						);
+						const { generateAnonymizedDump } = await import(
+							"../../server/anonymized-dump"
+						);
+
+						const rules = await getAnonymizationRulesFn({
+							data: profileIdParam,
+						});
+
+						if (rules.length === 0) {
+							return Response.json(
+								{
+									success: false,
+									error:
+										"No anonymization rules found for the selected profile.",
+								},
+								{ status: 400 },
+							);
+						}
+
+						const dumpContent = await generateAnonymizedDump({
+							credentials,
+							tables,
+							rules,
+							includeSchema: dumpType === "both",
+						});
+
+						writeFileSync(filePath, dumpContent, "utf-8");
+
+						if (downloadParam) {
+							return new Response(dumpContent, {
+								status: 200,
+								headers: {
+									"Content-Type": "application/sql",
+									"Content-Disposition": `attachment; filename="${fileName}"`,
+									"X-File-Path": filePath,
+									"X-File-Name": fileName,
+								},
+							});
+						}
+
+						return Response.json({
+							success: true,
+							message: "Anonymized dump saved locally",
+							path: filePath,
+							fileName,
+						});
+					}
+
+					// Standard native dump (pg_dump, mysqldump, etc.)
 
 					const commandArgs = buildCommandArgs(credentials, dumpType, tables);
 					const file = Bun.file(filePath);

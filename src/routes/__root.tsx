@@ -1,4 +1,3 @@
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -8,7 +7,6 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TerminalSquare } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -24,7 +22,6 @@ import {
 	ActiveConnectionProvider,
 	useActiveConnection,
 } from "../hooks/use-active-connection.tsx";
-import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import TanStackQueryProvider from "../integrations/tanstack-query/root-provider";
 import { savedConnectionsQueryKey } from "../lib/query-keys.ts";
 import { getSavedConnectionsFn } from "../server/connection-fns.ts";
@@ -250,7 +247,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<TanStackQueryProvider>
 					{children}
 					<Toaster />
-					<TanStackDevtools
+					{/* <TanStackDevtools
 						config={{
 							position: "bottom-right",
 						}}
@@ -261,7 +258,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 							},
 							TanStackQueryDevtools,
 						]}
-					/>
+					/> */}
 				</TanStackQueryProvider>
 				<Scripts />
 			</body>

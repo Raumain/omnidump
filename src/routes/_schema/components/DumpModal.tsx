@@ -1,5 +1,5 @@
-import { Database, Download, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { Database, Download, Loader2, Save, Shield } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import type {
+	AnonymizationProfile,
+	AnonymizationRule,
+} from "@/lib/anonymization-types";
+import { AnonymizationConfig } from "./AnonymizationConfig";
+import { AnonymizationProfileSelector } from "./AnonymizationProfileSelector";
 
 type TableInfo = {
 	tableName: string;
@@ -31,26 +37,62 @@ interface DumpModalProps {
 	isOpen: boolean;
 	tables: TableInfo[];
 	isDumping: boolean;
+	// Anonymization props
+	profiles: AnonymizationProfile[];
+	selectedProfileId: number | null;
+	profileRules: AnonymizationRule[];
+	isLoadingProfiles: boolean;
+	isCreatingProfile: boolean;
+	isDeletingProfile: boolean;
+	isSavingRules: boolean;
 	onOpenChange: (open: boolean) => void;
 	onDump: (options: {
 		tables: string[];
 		type: "data" | "both";
 		download: boolean;
+		anonymize: boolean;
+		profileId: number | null;
 	}) => void;
+	onSelectProfile: (profileId: number | null) => void;
+	onCreateProfile: (name: string) => void;
+	onDeleteProfile: (profileId: number) => void;
+	onDuplicateProfile: (profileId: number, newName: string) => void;
+	onSaveRules: (profileId: number, rules: AnonymizationRule[]) => void;
 }
 
 export function DumpModal({
 	isOpen,
 	tables,
 	isDumping,
+	profiles,
+	selectedProfileId,
+	profileRules,
+	isLoadingProfiles,
+	isCreatingProfile,
+	isDeletingProfile,
+	isSavingRules,
 	onOpenChange,
 	onDump,
+	onSelectProfile,
+	onCreateProfile,
+	onDeleteProfile,
+	onDuplicateProfile,
+	onSaveRules,
 }: DumpModalProps) {
 	const [selectedTables, setSelectedTables] = useState<Set<string>>(
 		() => new Set(tables.map((t) => t.tableName)),
 	);
 	const [dumpType, setDumpType] = useState<"data" | "both">("both");
 	const [downloadLocally, setDownloadLocally] = useState(true);
+	const [anonymizeEnabled, setAnonymizeEnabled] = useState(false);
+	const [localRules, setLocalRules] = useState<AnonymizationRule[]>([]);
+	const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+	// Sync local rules with profile rules when profile changes
+	useEffect(() => {
+		setLocalRules(profileRules);
+		setHasUnsavedChanges(false);
+	}, [profileRules]);
 
 	const allSelected =
 		tables.length > 0 && selectedTables.size === tables.length;
@@ -75,11 +117,25 @@ export function DumpModal({
 		});
 	};
 
+	const handleRulesChange = (rules: AnonymizationRule[]) => {
+		setLocalRules(rules);
+		setHasUnsavedChanges(true);
+	};
+
+	const handleSaveRules = () => {
+		if (selectedProfileId) {
+			onSaveRules(selectedProfileId, localRules);
+			setHasUnsavedChanges(false);
+		}
+	};
+
 	const handleDump = () => {
 		onDump({
 			tables: Array.from(selectedTables),
 			type: dumpType,
 			download: downloadLocally,
+			anonymize: anonymizeEnabled && selectedProfileId !== null,
+			profileId: anonymizeEnabled ? selectedProfileId : null,
 		});
 	};
 
@@ -91,10 +147,15 @@ export function DumpModal({
 		onOpenChange(open);
 	};
 
+	const canDump =
+		selectedTables.size > 0 &&
+		(!anonymizeEnabled ||
+			(selectedProfileId !== null && localRules.length > 0));
+
 	return (
 		<Dialog open={isOpen} onOpenChange={handleOpenChange}>
 			<DialogContent
-				className="rounded-none border-4 border-primary shadow-hardware font-mono p-0 bg-card max-w-lg max-h-[80vh] flex flex-col"
+				className="rounded-none border-4 border-primary shadow-hardware font-mono p-0 bg-card w-[70%] max-h-[90vh] flex flex-col"
 				showCloseButton={false}
 			>
 				<DialogHeader className="p-6 pb-4 border-b-2 border-border">
@@ -149,6 +210,91 @@ export function DumpModal({
 						>
 							Download immediately
 						</label>
+					</div>
+
+					{/* Anonymization Toggle */}
+					<div className="border-2 border-border p-4 space-y-4">
+						<div className="flex items-center gap-3">
+							<input
+								type="checkbox"
+								id="enable-anonymization"
+								checked={anonymizeEnabled}
+								onChange={(e) => setAnonymizeEnabled(e.target.checked)}
+								className="w-5 h-5 accent-primary cursor-pointer"
+							/>
+							<label
+								htmlFor="enable-anonymization"
+								className="font-bold uppercase text-sm cursor-pointer select-none flex items-center gap-2"
+							>
+								<Shield className="w-4 h-4" />
+								Enable Anonymization
+							</label>
+						</div>
+
+						{anonymizeEnabled && (
+							<div className="space-y-4 pt-2 border-t border-border">
+								<AnonymizationProfileSelector
+									profiles={profiles}
+									selectedProfileId={selectedProfileId}
+									isLoading={isLoadingProfiles}
+									isCreating={isCreatingProfile}
+									isDeleting={isDeletingProfile}
+									onSelect={onSelectProfile}
+									onCreate={onCreateProfile}
+									onDelete={onDeleteProfile}
+									onDuplicate={onDuplicateProfile}
+								/>
+
+								{selectedProfileId && (
+									<>
+										<AnonymizationConfig
+											tables={tables.filter((t) =>
+												selectedTables.has(t.tableName),
+											)}
+											rules={localRules}
+											onRulesChange={handleRulesChange}
+										/>
+
+										{hasUnsavedChanges && (
+											<div className="flex items-center justify-between bg-accent/20 p-2 border border-accent">
+												<span className="text-sm font-bold text-accent-foreground">
+													Unsaved changes
+												</span>
+												<Button
+													type="button"
+													size="sm"
+													onClick={handleSaveRules}
+													disabled={isSavingRules}
+													className="rounded-none border-2 border-accent shadow-hardware font-bold uppercase bg-accent text-accent-foreground hover:bg-accent/90"
+												>
+													{isSavingRules ? (
+														<Loader2 className="w-4 h-4 animate-spin mr-1" />
+													) : (
+														<Save className="w-4 h-4 mr-1" />
+													)}
+													Save Rules
+												</Button>
+											</div>
+										)}
+									</>
+								)}
+
+								{anonymizeEnabled && !selectedProfileId && (
+									<p className="text-sm text-muted-foreground">
+										Select or create a profile to configure anonymization rules.
+									</p>
+								)}
+
+								{anonymizeEnabled &&
+									selectedProfileId &&
+									localRules.length === 0 && (
+										<p className="text-sm text-destructive">
+											Add at least one anonymization rule to use anonymized
+											dump.
+										</p>
+									)}
+							</div>
+						)}
 					</div>
 
 					{/* Table Selection */}
@@ -211,15 +357,21 @@ export function DumpModal({
 					<Button
 						type="button"
 						onClick={handleDump}
-						disabled={isDumping || selectedTables.size === 0}
+						disabled={isDumping || !canDump}
 						className="rounded-none border-2 border-primary shadow-hardware font-bold uppercase bg-primary text-primary-foreground hover:bg-primary/90"
 					>
 						{isDumping ? (
 							<Loader2 className="animate-spin w-4 h-4 mr-2" />
+						) : anonymizeEnabled ? (
+							<Shield className="w-4 h-4 mr-2" />
 						) : (
 							<Download className="w-4 h-4 mr-2" />
 						)}
-						{isDumping ? "Dumping..." : "Execute Dump"}
+						{isDumping
+							? "Dumping..."
+							: anonymizeEnabled
+								? "Execute Anonymized Dump"
+								: "Execute Dump"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

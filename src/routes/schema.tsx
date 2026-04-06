@@ -7,6 +7,15 @@ import { toast } from "sonner";
 import Loader from "@/components/Loader.tsx";
 import { NoConnectionState } from "@/components/NoConnectionState";
 import { useActiveConnection } from "@/hooks/use-active-connection.tsx";
+import type { AnonymizationRule } from "@/lib/anonymization-types";
+import {
+	createAnonymizationProfileFn,
+	deleteAnonymizationProfileFn,
+	duplicateAnonymizationProfileFn,
+	getAnonymizationProfilesFn,
+	getAnonymizationRulesFn,
+	saveAnonymizationRulesFn,
+} from "@/server/anonymization-fns";
 import {
 	clearTableDataFn,
 	deleteDumpFn,
@@ -54,6 +63,11 @@ function SchemaPage() {
 	const [rejectFileName, setRejectFileName] = useState<string | null>(null);
 	const csvFileInputRef = useRef<HTMLInputElement>(null);
 
+	// Anonymization state
+	const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
+		null,
+	);
+
 	const { activeConnection, isHydrated } = useActiveConnection();
 
 	const schemaQuery = useQuery({
@@ -72,11 +86,128 @@ function SchemaPage() {
 		queryFn: () => getAvailableDumpsFn(),
 	});
 
+	// Anonymization profiles query
+	const profilesQuery = useQuery({
+		queryKey: ["anonymization-profiles", activeConnection?.id],
+		queryFn: async () => {
+			if (!activeConnection?.id) return [];
+			return getAnonymizationProfilesFn({ data: activeConnection.id });
+		},
+		enabled: !!activeConnection?.id,
+	});
+
+	// Anonymization rules query for selected profile
+	const rulesQuery = useQuery({
+		queryKey: ["anonymization-rules", selectedProfileId],
+		queryFn: async () => {
+			if (!selectedProfileId) return [];
+			return getAnonymizationRulesFn({ data: selectedProfileId });
+		},
+		enabled: !!selectedProfileId,
+	});
+
+	// Create profile mutation
+	const createProfileMutation = useMutation({
+		mutationFn: async (name: string) => {
+			if (!activeConnection?.id) throw new Error("No active connection");
+			return createAnonymizationProfileFn({
+				data: { connectionId: activeConnection.id, name },
+			});
+		},
+		onSuccess: (profile) => {
+			profilesQuery.refetch();
+			setSelectedProfileId(profile.id);
+			toast.success("Profile created", { description: profile.name });
+		},
+		onError: (error) => {
+			toast.error("Failed to create profile", {
+				description: error instanceof Error ? error.message : "Unknown error",
+			});
+		},
+	});
+
+	// Delete profile mutation
+	const deleteProfileMutation = useMutation({
+		mutationFn: async (profileId: number) => {
+			return deleteAnonymizationProfileFn({ data: profileId });
+		},
+		onSuccess: () => {
+			profilesQuery.refetch();
+			setSelectedProfileId(null);
+			toast.success("Profile deleted");
+		},
+		onError: (error) => {
+			toast.error("Failed to delete profile", {
+				description: error instanceof Error ? error.message : "Unknown error",
+			});
+		},
+	});
+
+	// Duplicate profile mutation
+	const duplicateProfileMutation = useMutation({
+		mutationFn: async ({
+			profileId,
+			newName,
+		}: {
+			profileId: number;
+			newName: string;
+		}) => {
+			return duplicateAnonymizationProfileFn({ data: { profileId, newName } });
+		},
+		onSuccess: (profile) => {
+			if (profile) {
+				profilesQuery.refetch();
+				setSelectedProfileId(profile.id);
+				toast.success("Profile duplicated", { description: profile.name });
+			}
+		},
+		onError: (error) => {
+			toast.error("Failed to duplicate profile", {
+				description: error instanceof Error ? error.message : "Unknown error",
+			});
+		},
+	});
+
+	// Save rules mutation
+	const saveRulesMutation = useMutation({
+		mutationFn: async ({
+			profileId,
+			rules,
+		}: {
+			profileId: number;
+			rules: AnonymizationRule[];
+		}) => {
+			return saveAnonymizationRulesFn({
+				data: {
+					profileId,
+					rules: rules.map((r) => ({
+						tableName: r.tableName,
+						columnName: r.columnName,
+						method: r.method,
+						options: r.options,
+					})),
+				},
+			});
+		},
+		onSuccess: () => {
+			rulesQuery.refetch();
+			profilesQuery.refetch();
+			toast.success("Rules saved");
+		},
+		onError: (error) => {
+			toast.error("Failed to save rules", {
+				description: error instanceof Error ? error.message : "Unknown error",
+			});
+		},
+	});
+
 	const dumpMutation = useMutation({
 		mutationFn: async (options: {
 			tables: string[];
 			type: "data" | "both";
 			download: boolean;
+			anonymize: boolean;
+			profileId: number | null;
 		}) => {
 			if (!activeConnection) {
 				throw new Error("No active connection.");
@@ -92,6 +223,8 @@ function SchemaPage() {
 					type: options.type,
 					tables: options.tables.length > 0 ? options.tables : undefined,
 					download: options.download,
+					anonymize: options.anonymize,
+					profileId: options.profileId,
 				}),
 			});
 
@@ -689,8 +822,24 @@ function SchemaPage() {
 				isOpen={isDumpModalOpen}
 				tables={tables}
 				isDumping={dumpMutation.isPending}
+				profiles={profilesQuery.data ?? []}
+				selectedProfileId={selectedProfileId}
+				profileRules={rulesQuery.data ?? []}
+				isLoadingProfiles={profilesQuery.isLoading}
+				isCreatingProfile={createProfileMutation.isPending}
+				isDeletingProfile={deleteProfileMutation.isPending}
+				isSavingRules={saveRulesMutation.isPending}
 				onOpenChange={setIsDumpModalOpen}
 				onDump={(options) => dumpMutation.mutate(options)}
+				onSelectProfile={setSelectedProfileId}
+				onCreateProfile={(name) => createProfileMutation.mutate(name)}
+				onDeleteProfile={(id) => deleteProfileMutation.mutate(id)}
+				onDuplicateProfile={(id, name) =>
+					duplicateProfileMutation.mutate({ profileId: id, newName: name })
+				}
+				onSaveRules={(profileId, rules) =>
+					saveRulesMutation.mutate({ profileId, rules })
+				}
 			/>
 
 			<DumpsDrawer

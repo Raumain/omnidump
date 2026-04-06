@@ -61,3 +61,28 @@ if (!existingColumnSet.has("ssh_user")) {
 if (!existingColumnSet.has("ssh_private_key")) {
 	db.run("ALTER TABLE saved_connections ADD COLUMN ssh_private_key TEXT");
 }
+
+// Anonymization profiles table - stores named profiles per connection
+db.run(`
+  CREATE TABLE IF NOT EXISTS anonymization_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (connection_id) REFERENCES saved_connections(id) ON DELETE CASCADE
+  )
+`);
+
+// Anonymization rules table - stores per-column anonymization settings
+db.run(`
+  CREATE TABLE IF NOT EXISTS anonymization_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    method TEXT NOT NULL,
+    options TEXT,
+    FOREIGN KEY (profile_id) REFERENCES anonymization_profiles(id) ON DELETE CASCADE
+  )
+`);
