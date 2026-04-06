@@ -221,7 +221,10 @@ function ImportPage() {
 			case "relationships":
 				return true;
 			case "import":
-				return wizardState.importProgress.status === "completed";
+				return (
+					wizardState.importProgress.status === "completed" ||
+					wizardState.importProgress.status === "completed_with_errors"
+				);
 			default:
 				return false;
 		}
@@ -342,7 +345,8 @@ function ImportPage() {
 				)}
 
 				{wizardState.step === "import" &&
-					wizardState.importProgress.status === "completed" && (
+					(wizardState.importProgress.status === "completed" ||
+						wizardState.importProgress.status === "completed_with_errors") && (
 						<Button
 							variant="accent"
 							size="lg"
@@ -682,10 +686,30 @@ function ConfigureStep({
 			nextAdvancedMapping,
 			existingTableNames,
 		);
+		const sanitizedPolicies = nextPolicies.map((policy) => {
+			const routedColumns = new Set(
+				Object.values(nextAdvancedMapping)
+					.filter(
+						(target): target is ColumnTarget =>
+							target !== null && target.tableName === policy.tableName,
+					)
+					.map((target) => target.columnName),
+			);
+
+			return {
+				...policy,
+				conflictColumns:
+					policy.writeMode === "upsert"
+						? policy.conflictColumns.filter((column) =>
+								routedColumns.has(column),
+							)
+						: [],
+			};
+		});
 
 		updateFile(id, {
 			advancedMapping: nextAdvancedMapping,
-			tablePolicies: nextPolicies,
+			tablePolicies: sanitizedPolicies,
 		});
 	};
 
@@ -699,8 +723,33 @@ function ConfigureStep({
 			return;
 		}
 
+		const routedColumnsForTable = new Set(
+			Object.values(file.advancedMapping)
+				.filter(
+					(target): target is ColumnTarget =>
+						target !== null && target.tableName === tableName,
+				)
+				.map((target) => target.columnName),
+		);
+
+		const normalizedConflictColumns =
+			updates.writeMode === "insert"
+				? []
+				: (updates.conflictColumns ?? []).filter((column) =>
+						routedColumnsForTable.has(column),
+					);
+
 		const nextPolicies = file.tablePolicies.map((policy) =>
-			policy.tableName === tableName ? { ...policy, ...updates } : policy,
+			policy.tableName === tableName
+				? {
+						...policy,
+						...updates,
+						...(updates.conflictColumns !== undefined ||
+						updates.writeMode !== undefined
+							? { conflictColumns: normalizedConflictColumns }
+							: {}),
+					}
+				: policy,
 		);
 
 		updateFile(id, { tablePolicies: nextPolicies });
@@ -1046,6 +1095,21 @@ function CsvConfigPanel({
 							<TablePoliciesEditor
 								tablePolicies={csv.tablePolicies}
 								existingTables={existingTables}
+								routedColumnsByTable={Object.values(csv.advancedMapping).reduce(
+									(acc, target) => {
+										if (!target) {
+											return acc;
+										}
+
+										const existing = acc[target.tableName] ?? [];
+										if (!existing.includes(target.columnName)) {
+											acc[target.tableName] = [...existing, target.columnName];
+										}
+
+										return acc;
+									},
+									{} as Record<string, string[]>,
+								)}
 								onPolicyChange={onTablePolicyChange}
 							/>
 
@@ -1173,10 +1237,12 @@ function AdvancedColumnRoutingEditor({
 function TablePoliciesEditor({
 	tablePolicies,
 	existingTables,
+	routedColumnsByTable,
 	onPolicyChange,
 }: {
 	tablePolicies: TableWritePolicy[];
 	existingTables: SchemaTable[];
+	routedColumnsByTable: Record<string, string[]>;
 	onPolicyChange: (
 		tableName: string,
 		updates: Partial<TableWritePolicy>,
@@ -1197,6 +1263,7 @@ function TablePoliciesEditor({
 						const selectedTable = existingTables.find(
 							(table) => table.tableName === policy.tableName,
 						);
+						const routedColumns = routedColumnsByTable[policy.tableName] ?? [];
 
 						return (
 							<div
@@ -1283,21 +1350,41 @@ function TablePoliciesEditor({
 
 									<div>
 										<span className="block text-xs font-bold uppercase mb-1">
-											UPSERT CONFLICT COLUMNS (CSV)
+											UPSERT CONFLICT COLUMNS
 										</span>
-										<Input
-											value={policy.conflictColumns.join(",")}
-											onChange={(event) =>
-												onPolicyChange(policy.tableName, {
-													conflictColumns: event.target.value
-														.split(",")
-														.map((value) => value.trim())
-														.filter((value) => value !== ""),
-												})
-											}
-											placeholder="email,external_id"
-											className="h-8 rounded-none border-2 border-border bg-card font-bold"
-										/>
+										{routedColumns.length === 0 ? (
+											<p className="h-8 rounded-none border-2 border-border bg-muted px-2 text-xs font-bold uppercase text-muted-foreground flex items-center">
+												No routed columns available
+											</p>
+										) : (
+											<div className="flex flex-wrap gap-2">
+												{routedColumns.map((columnName) => {
+													const selected =
+														policy.conflictColumns.includes(columnName);
+													return (
+														<Button
+															key={columnName}
+															type="button"
+															size="xs"
+															variant={selected ? "accent" : "outline"}
+															disabled={policy.writeMode !== "upsert"}
+															onClick={() => {
+																const next = selected
+																	? policy.conflictColumns.filter(
+																			(column) => column !== columnName,
+																		)
+																	: [...policy.conflictColumns, columnName];
+																onPolicyChange(policy.tableName, {
+																	conflictColumns: next,
+																});
+															}}
+														>
+															{columnName}
+														</Button>
+													);
+												})}
+											</div>
+										)}
 									</div>
 								</div>
 
@@ -2249,13 +2336,15 @@ function ImportStep({
 					}
 
 					if (payload.type === "table_complete" && tableIndex >= 0) {
+						const nextFailedRows =
+							payload.failedRows ?? workingTables[tableIndex].failedRows;
 						workingTables[tableIndex] = {
 							...workingTables[tableIndex],
-							status: "completed",
+							status:
+								nextFailedRows > 0 ? "completed_with_errors" : "completed",
 							insertedRows:
 								payload.insertedRows ?? workingTables[tableIndex].insertedRows,
-							failedRows:
-								payload.failedRows ?? workingTables[tableIndex].failedRows,
+							failedRows: nextFailedRows,
 							totalRows:
 								payload.totalRows ?? workingTables[tableIndex].totalRows,
 							rejectFileName: payload.rejectFileName,
@@ -2265,8 +2354,14 @@ function ImportStep({
 					if (payload.type === "table_error" && tableIndex >= 0) {
 						workingTables[tableIndex] = {
 							...workingTables[tableIndex],
-							status: "failed",
-							error: payload.error ?? "Table import failed.",
+							status: "importing",
+							insertedRows:
+								payload.insertedRows ?? workingTables[tableIndex].insertedRows,
+							failedRows:
+								payload.failedRows ?? workingTables[tableIndex].failedRows,
+							totalRows:
+								payload.totalRows ?? workingTables[tableIndex].totalRows,
+							error: payload.error ?? workingTables[tableIndex].error,
 						};
 					}
 
@@ -2278,12 +2373,19 @@ function ImportStep({
 
 					if (payload.type === "complete") {
 						completed = true;
-						const hasFailedTables = workingTables.some(
+						const hasFatalFailedTables = workingTables.some(
 							(table) => table.status === "failed",
+						);
+						const hasRejectedRows = workingTables.some(
+							(table) => table.failedRows > 0,
 						);
 
 						onProgressUpdate({
-							status: hasFailedTables ? "failed" : "completed",
+							status: hasFatalFailedTables
+								? "failed"
+								: hasRejectedRows
+									? "completed_with_errors"
+									: "completed",
 							tables: [...workingTables],
 							currentTableIndex:
 								workingTables.length > 0 ? workingTables.length - 1 : -1,
@@ -2294,11 +2396,18 @@ function ImportStep({
 			}
 
 			if (!completed) {
-				const hasFailedTables = workingTables.some(
+				const hasFatalFailedTables = workingTables.some(
 					(table) => table.status === "failed",
 				);
+				const hasRejectedRows = workingTables.some(
+					(table) => table.failedRows > 0,
+				);
 				onProgressUpdate({
-					status: hasFailedTables ? "failed" : "completed",
+					status: hasFatalFailedTables
+						? "failed"
+						: hasRejectedRows
+							? "completed_with_errors"
+							: "completed",
 					tables: [...workingTables],
 					currentTableIndex:
 						workingTables.length > 0 ? workingTables.length - 1 : -1,
@@ -2335,6 +2444,10 @@ function ImportStep({
 				<h2 className="text-xl font-black uppercase tracking-wider text-foreground mb-4 border-b-4 border-border pb-4">
 					4. IMPORT EXECUTION
 				</h2>
+				<p className="mb-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+					Rows are processed transactionally. If a child table write fails, the
+					entire row is rolled back and written to rejects.
+				</p>
 
 				{importProgress.status === "idle" && (
 					<div className="text-center py-12">
@@ -2370,12 +2483,17 @@ function ImportStep({
 								{importProgress.status === "completed" && (
 									<Check className="w-6 h-6 text-primary" />
 								)}
+								{importProgress.status === "completed_with_errors" && (
+									<AlertTriangle className="w-6 h-6 text-amber-500" />
+								)}
 								{importProgress.status === "failed" && (
 									<AlertTriangle className="w-6 h-6 text-destructive" />
 								)}
 								<span className="font-black uppercase">
 									{importProgress.status === "running" && "IMPORTING..."}
 									{importProgress.status === "completed" && "IMPORT COMPLETE"}
+									{importProgress.status === "completed_with_errors" &&
+										"IMPORT COMPLETE WITH REJECTS"}
 									{importProgress.status === "failed" && "IMPORT FAILED"}
 								</span>
 							</div>
@@ -2403,6 +2521,9 @@ function ImportStep({
 											)}
 											{table.status === "completed" && (
 												<Check className="w-4 h-4 text-primary" />
+											)}
+											{table.status === "completed_with_errors" && (
+												<AlertTriangle className="w-4 h-4 text-amber-500" />
 											)}
 											{table.status === "failed" && (
 												<X className="w-4 h-4 text-destructive" />
@@ -2443,6 +2564,11 @@ function ImportStep({
 											</a>
 										</Button>
 									)}
+									{table.error ? (
+										<p className="text-xs font-bold uppercase text-amber-600">
+											Last rejection: {table.error}
+										</p>
+									) : null}
 								</div>
 							))}
 						</div>

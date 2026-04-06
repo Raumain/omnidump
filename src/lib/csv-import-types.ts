@@ -100,7 +100,13 @@ export type ForeignKeyDef = {
 export type TableImportProgress = {
 	tableIndex: number;
 	tableName: string;
-	status: "pending" | "creating" | "importing" | "completed" | "failed";
+	status:
+		| "pending"
+		| "creating"
+		| "importing"
+		| "completed"
+		| "completed_with_errors"
+		| "failed";
 	totalRows: number;
 	insertedRows: number;
 	failedRows: number;
@@ -112,7 +118,7 @@ export type TableImportProgress = {
  * Overall import progress
  */
 export type ImportProgress = {
-	status: "idle" | "running" | "completed" | "failed";
+	status: "idle" | "running" | "completed" | "completed_with_errors" | "failed";
 	tables: TableImportProgress[];
 	currentTableIndex: number;
 	error?: string;
@@ -205,6 +211,8 @@ export type BatchImportProgressEvent = {
 	failedRows?: number;
 	rejectFileName?: string;
 	error?: string;
+	errorStage?: "validation" | "constraint" | "sql" | "runtime";
+	errorCode?: string;
 };
 
 /**
