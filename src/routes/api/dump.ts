@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
 import type { DbCredentials } from "../../lib/db/connection";
+import { extractErrorMessage } from "../../lib/errors";
 import type { SavedConnection } from "../../server/connection-fns";
 
 type DumpType = "data" | "both";
@@ -270,13 +271,10 @@ export const Route = createFileRoute("/api/dump" as never)({
 						fileName,
 					});
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
-
 					return Response.json(
 						{
 							success: false,
-							error: message,
+							error: extractErrorMessage(error),
 						},
 						{ status: 500 },
 					);

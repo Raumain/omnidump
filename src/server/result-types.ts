@@ -1,3 +1,3 @@
-export type MessageServerFnResult =
-	| { success: true; message: string }
-	| { success: false; error: string };
+import type { Result } from "../lib/result";
+
+export type MessageServerFnResult = Result<{ message: string }>;

@@ -11,7 +11,6 @@ import type {
 } from "../../lib/csv-import-types";
 import { getDbColumnType } from "../../lib/csv-import-types";
 import type { DbCredentials } from "../../lib/db/connection";
-import type { SavedConnection } from "../../server/connection-fns";
 import {
 	executeRowTransaction,
 	formatImportErrorMessage,
@@ -19,9 +18,10 @@ import {
 	getFileGeneratedLinks,
 	mergeRuntimePolicy,
 	parseBatchImportConfig,
-	recordToRejectCsvCell,
 	type RuntimeTableConfig,
+	recordToRejectCsvCell,
 } from "../../server/batch-import-runtime";
+import type { SavedConnection } from "../../server/connection-fns";
 import { sortTablesByDependencies } from "../../server/csv-import-fns";
 
 // Current Bun SQL adapter uses a single acquired connection per importer DB instance.
@@ -210,7 +210,8 @@ export const Route = createFileRoute("/api/batch-import")({
 									fileConfig.importMode === "advanced" &&
 									fileConfig.advancedConfig
 								) {
-									for (const policy of fileConfig.advancedConfig.tablePolicies) {
+									for (const policy of fileConfig.advancedConfig
+										.tablePolicies) {
 										mergeRuntimePolicy(policyByTable, {
 											tableName: policy.tableName,
 											tableMode: policy.tableMode,
@@ -486,9 +487,7 @@ export const Route = createFileRoute("/api/batch-import")({
 											});
 
 											inFlight.add(wrapped);
-											if (
-												inFlight.size >= MAX_IN_FLIGHT_TRANSACTIONS
-											) {
+											if (inFlight.size >= MAX_IN_FLIGHT_TRANSACTIONS) {
 												await Promise.race(inFlight);
 											}
 										}

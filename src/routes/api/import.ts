@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { parse } from "csv-parse";
 
 import type { DbCredentials } from "../../lib/db/connection";
+import { extractErrorMessage } from "../../lib/errors";
 import type { SavedConnection } from "../../server/connection-fns";
 
 const IMPORT_BATCH_SIZE = 1000;
@@ -296,14 +297,11 @@ export const Route = createFileRoute("/api/import")({
 								rejectFileName: failedRows > 0 ? rejectFileName : undefined,
 							});
 						} catch (error) {
-							const message =
-								error instanceof Error ? error.message : "Import failed.";
-
 							sendEvent({
 								successfulRows,
 								failedRows,
 								status: "failed",
-								error: message,
+								error: extractErrorMessage(error, "Import failed."),
 							});
 						} finally {
 							if (!rejectWriterClosed) {

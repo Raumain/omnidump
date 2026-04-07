@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
+import { extractErrorMessage } from "../../lib/errors";
 
 const DUMPS_DIRECTORY = "./exports/dumps";
 
@@ -40,10 +41,7 @@ export const Route = createFileRoute("/api/download-dump" as never)({
 						},
 					});
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
-
-					return new Response(message, { status: 500 });
+					return new Response(extractErrorMessage(error), { status: 500 });
 				}
 			},
 		},

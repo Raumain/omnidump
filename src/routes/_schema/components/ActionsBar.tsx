@@ -105,6 +105,16 @@ export function ActionsBar({
 				</div>
 
 				{/* Dump SQL */}
+				<Button type="button" asChild disabled={isAnyActionPending}>
+					<a
+						href={`/api/export-csv?connectionId=${connectionId}&scope=database`}
+						className="hover:bg-neutral-600! text-foreground!"
+					>
+						Export DB CSV ZIP
+					</a>
+				</Button>
+
+				{/* Dump SQL */}
 				<Button
 					type="button"
 					className="hover:bg-neutral-600!"

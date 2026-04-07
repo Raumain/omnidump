@@ -23,14 +23,20 @@ import type { DbCredentials } from "@/lib/db/connection";
 
 import { SSHConfigSection } from "./SSHConfigSection";
 
-interface ConnectionFormProps {
+interface ConnectionFormState {
 	connectionName: string;
 	credentials: DbCredentials;
 	editingConnectionId: number | null;
 	status: { success: boolean; message: string } | null;
+}
+
+interface ConnectionFormFlags {
 	isTesting: boolean;
 	isSaving: boolean;
 	isUpdating: boolean;
+}
+
+interface ConnectionFormHandlers {
 	onConnectionNameChange: (name: string) => void;
 	onCredentialsChange: (update: (prev: DbCredentials) => DbCredentials) => void;
 	onNewConnection: () => void;
@@ -38,20 +44,26 @@ interface ConnectionFormProps {
 	onTestConnection: (event: SubmitEvent<HTMLFormElement>) => void;
 }
 
+interface ConnectionFormProps {
+	state: ConnectionFormState;
+	flags: ConnectionFormFlags;
+	handlers: ConnectionFormHandlers;
+}
+
 export function ConnectionForm({
-	connectionName,
-	credentials,
-	editingConnectionId,
-	status,
-	isTesting,
-	isSaving,
-	isUpdating,
-	onConnectionNameChange,
-	onCredentialsChange,
-	onNewConnection,
-	onSaveConnection,
-	onTestConnection,
+	state,
+	flags,
+	handlers,
 }: ConnectionFormProps) {
+	const { connectionName, credentials, editingConnectionId, status } = state;
+	const { isTesting, isSaving, isUpdating } = flags;
+	const {
+		onConnectionNameChange,
+		onCredentialsChange,
+		onNewConnection,
+		onSaveConnection,
+		onTestConnection,
+	} = handlers;
 	const isAnyMutationPending = isTesting || isSaving || isUpdating;
 
 	return (

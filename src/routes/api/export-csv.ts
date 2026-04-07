@@ -1,110 +1,149 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import type { DbCredentials } from "../../lib/db/connection";
-import type { SavedConnection } from "../../server/connection-fns";
+import { extractErrorMessage } from "../../lib/errors";
 
-const toDbCredentials = (connection: SavedConnection): DbCredentials => {
-	const normalizedDriver: DbCredentials["driver"] =
-		connection.driver === "mysql" ||
-		connection.driver === "sqlite" ||
-		connection.driver === "postgres"
-			? connection.driver
-			: "postgres";
-
-	return {
-		driver: normalizedDriver,
-		host: connection.host ?? undefined,
-		port: connection.port ?? undefined,
-		user: connection.user ?? undefined,
-		password: connection.password ?? undefined,
-		database: connection.database_name ?? undefined,
-	};
-};
-
-const toCsvCell = (value: unknown): string => {
-	let formattedValue = String(
-		value === null || value === undefined ? "" : value,
-	);
-
-	if (/[",\n;]/.test(formattedValue)) {
-		formattedValue = `"${formattedValue.replace(/"/g, '""')}"`;
-	}
-
-	return formattedValue;
-};
+class TableNotFoundError extends Error {}
 
 export const Route = createFileRoute("/api/export-csv" as never)({
 	server: {
 		handlers: {
 			GET: async ({ request }) => {
-				const [{ getSavedConnectionById }, { getKyselyInstance }] =
-					await Promise.all([
-						import("../../server/saved-connections"),
-						import("../../lib/db/connection"),
-					]);
+				const [
+					{ getSavedConnectionById },
+					{ savedConnectionToCredentials },
+					{ getKyselyInstance },
+					{ withTunnel },
+					{
+						buildCsv,
+						buildCsvArchiveFileName,
+						buildCsvZip,
+						buildUniqueCsvFileName,
+						parseCsvExportQuery,
+						sanitizeFileNamePart,
+					},
+				] = await Promise.all([
+					import("../../server/saved-connections"),
+					import("../../lib/credentials"),
+					import("../../lib/db/connection"),
+					import("../../server/ssh-tunnel"),
+					import("../../server/csv-export"),
+				]);
 
-				const url = new URL(request.url);
-				const connectionIdParam = url.searchParams.get("connectionId");
-				const tableName = url.searchParams.get("tableName");
-				const connectionId = Number(connectionIdParam);
+				let parsedQuery: ReturnType<typeof parseCsvExportQuery>;
 
-				if (!connectionIdParam || Number.isNaN(connectionId)) {
-					return new Response("Invalid connectionId query parameter.", {
-						status: 400,
-					});
+				try {
+					parsedQuery = parseCsvExportQuery(new URL(request.url));
+				} catch (error) {
+					return new Response(extractErrorMessage(error), { status: 400 });
 				}
 
-				if (!tableName || tableName.trim().length === 0) {
-					return new Response("Invalid tableName query parameter.", {
-						status: 400,
-					});
-				}
-
-				const connection = getSavedConnectionById(connectionId);
+				const connection = getSavedConnectionById(parsedQuery.connectionId);
 
 				if (!connection) {
 					return new Response("Connection not found.", { status: 404 });
 				}
 
-				const db = getKyselyInstance(toDbCredentials(connection));
+				const credentials = savedConnectionToCredentials(connection);
 
 				try {
-					const rows = await db.selectFrom(tableName).selectAll().execute();
+					const exportResult = await withTunnel(
+						credentials,
+						async (tunneledCreds) => {
+							const db = getKyselyInstance(tunneledCreds);
 
-					if (rows.length === 0) {
-						return new Response("No rows found for selected table.", {
-							status: 404,
+							try {
+								const tables = await db.introspection.getTables();
+								const tableByName = new Map(
+									tables.map((table) => [table.name, table]),
+								);
+
+								if (parsedQuery.scope === "table") {
+									const targetTable = tableByName.get(parsedQuery.tableName);
+
+									if (!targetTable) {
+										throw new TableNotFoundError(
+											`Table "${parsedQuery.tableName}" not found.`,
+										);
+									}
+
+									const rows = await db
+										.selectFrom(parsedQuery.tableName as never)
+										.selectAll()
+										.execute();
+									const headers = targetTable.columns.map(
+										(column) => column.name,
+									);
+									const csv = buildCsv(
+										headers,
+										rows as Array<Record<string, unknown>>,
+									);
+
+									return {
+										scope: "table" as const,
+										tableName: parsedQuery.tableName,
+										csv,
+									};
+								}
+
+								const usedFileNames = new Set<string>();
+								const csvFiles = new Map<string, string>();
+
+								for (const table of tables) {
+									const rows = await db
+										.selectFrom(table.name as never)
+										.selectAll()
+										.execute();
+									const headers = table.columns.map((column) => column.name);
+									const csv = buildCsv(
+										headers,
+										rows as Array<Record<string, unknown>>,
+									);
+									const fileName = buildUniqueCsvFileName(
+										table.name,
+										usedFileNames,
+									);
+									csvFiles.set(fileName, csv);
+								}
+
+								return {
+									scope: "database" as const,
+									zipData: buildCsvZip(csvFiles),
+								};
+							} finally {
+								await db.destroy();
+							}
+						},
+					);
+
+					if (exportResult.scope === "table") {
+						const safeTableName = sanitizeFileNamePart(exportResult.tableName);
+
+						return new Response(exportResult.csv, {
+							headers: {
+								"Content-Type": "text/csv; charset=utf-8",
+								"Content-Disposition": `attachment; filename="${safeTableName}_export.csv"`,
+							},
 						});
 					}
 
-					const headers = Object.keys(rows[0] as Record<string, unknown>);
-					const lines = [headers.join(",")];
+					const archiveNameSource =
+						connection.database_name ?? connection.name ?? "database";
+					const archiveFileName = buildCsvArchiveFileName(archiveNameSource);
+					const zipBody = new Uint8Array(exportResult.zipData.byteLength);
+					zipBody.set(exportResult.zipData);
 
-					for (const row of rows as Array<Record<string, unknown>>) {
-						const line = headers
-							.map((header) => {
-								return toCsvCell(row[header]);
-							})
-							.join(",");
-
-						lines.push(line);
-					}
-
-					const csv = lines.join("\n");
-
-					return new Response(csv, {
+					return new Response(zipBody.buffer, {
 						headers: {
-							"Content-Type": "text/csv; charset=utf-8",
-							"Content-Disposition": `attachment; filename="${tableName}_export.csv"`,
+							"Content-Type": "application/zip",
+							"Content-Disposition": `attachment; filename="${archiveFileName}"`,
 						},
 					});
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
+					if (error instanceof TableNotFoundError) {
+						return new Response(error.message, { status: 404 });
+					}
 
-					return new Response(message, { status: 500 });
-				} finally {
-					await db.destroy();
+					return new Response(extractErrorMessage(error), { status: 500 });
 				}
 			},
 		},

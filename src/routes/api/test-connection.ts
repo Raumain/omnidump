@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createConnection, type DbCredentials } from "../../lib/db/connection";
+import { extractErrorMessage } from "../../lib/errors";
 import { withTunnel } from "../../server/ssh-tunnel";
 
 export const Route = createFileRoute("/api/test-connection" as never)({
@@ -27,13 +28,11 @@ export const Route = createFileRoute("/api/test-connection" as never)({
 					});
 				} catch (error) {
 					console.error("[OmniDump] /api/test-connection error:", error);
-					const message =
-						error instanceof Error ? error.message : "Unknown error";
 
 					return Response.json(
 						{
 							success: false,
-							error: message,
+							error: extractErrorMessage(error),
 						},
 						{ status: 500 },
 					);

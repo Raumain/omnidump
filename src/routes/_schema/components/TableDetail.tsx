@@ -2,6 +2,7 @@ import {
 	AlertTriangle,
 	ChevronDown,
 	Database,
+	Download,
 	Loader2,
 	Trash2,
 	Upload,
@@ -27,31 +28,44 @@ interface ColumnInfo {
 	isNullable: boolean;
 }
 
-interface TableDetailProps {
+interface TableDetailData {
 	tableName: string;
 	columns: ColumnInfo[];
+}
+
+interface TableDetailState {
 	seedCount: string;
 	isSeeding: boolean;
 	isClearingTable: boolean;
 	isImporting: boolean;
+}
+
+interface TableDetailHandlers {
 	onSeedCountChange: (count: string) => void;
 	onSeed: (tableName: string, count: number) => void;
 	onOpenImportDrawer: () => void;
 	onClearTable: (tableName: string) => void;
 }
 
+interface TableDetailProps {
+	connectionId: number;
+	table: TableDetailData;
+	state: TableDetailState;
+	handlers: TableDetailHandlers;
+}
+
 export function TableDetail({
-	tableName,
-	columns,
-	seedCount,
-	isSeeding,
-	isClearingTable,
-	isImporting,
-	onSeedCountChange,
-	onSeed,
-	onOpenImportDrawer,
-	onClearTable,
+	connectionId,
+	table,
+	state,
+	handlers,
 }: TableDetailProps) {
+	const { tableName, columns } = table;
+	const { seedCount, isSeeding, isClearingTable, isImporting } = state;
+	const { onSeedCountChange, onSeed, onOpenImportDrawer, onClearTable } =
+		handlers;
+	const tableCsvExportHref = `/api/export-csv?connectionId=${connectionId}&scope=table&tableName=${encodeURIComponent(tableName)}`;
+
 	return (
 		<>
 			<div className="p-4 border-b-2 border-border flex items-center justify-between">
@@ -127,6 +141,19 @@ export function TableDetail({
 				>
 					<Upload className="w-4 h-4 mr-2" />
 					Import CSV
+				</Button>
+
+				<Button
+					type="button"
+					asChild
+					variant="outline"
+					className="shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
+					disabled={isImporting || isClearingTable || isSeeding}
+				>
+					<a href={tableCsvExportHref}>
+						<Download className="w-4 h-4 mr-2" />
+						Export CSV
+					</a>
 				</Button>
 
 				<AlertDialog>

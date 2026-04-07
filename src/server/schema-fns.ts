@@ -3,25 +3,19 @@ import { createServerFn } from "@tanstack/react-start";
 import { Glob } from "bun";
 import { sql } from "kysely";
 
+import { normalizeCredentials } from "../lib/credentials";
 import { type DbCredentials, getKyselyInstance } from "../lib/db/connection";
+import { extractErrorMessage } from "../lib/errors";
+import type { Failure, Result } from "../lib/result";
+import type { SavedConnection } from "./connection-fns";
+import {
+	disableForeignKeyChecks,
+	restoreForeignKeyChecks,
+} from "./db-helpers/foreign-keys";
 import type { MessageServerFnResult } from "./result-types";
 import { withTunnel } from "./ssh-tunnel";
 
-type ActiveConnectionInput =
-	| DbCredentials
-	| {
-			driver: string | null;
-			host: string | null;
-			port: number | null;
-			user: string | null;
-			password: string | null;
-			database_name: string | null;
-			use_ssh: number | null;
-			ssh_host: string | null;
-			ssh_port: number | null;
-			ssh_user: string | null;
-			ssh_private_key: string | null;
-	  };
+type ActiveConnectionInput = DbCredentials | SavedConnection;
 
 type SchemaTable = {
 	tableName: string;
@@ -32,7 +26,7 @@ type SchemaTable = {
 	}>;
 };
 
-type GetDatabaseSchemaResult = SchemaTable[] | { error: string };
+type GetDatabaseSchemaResult = SchemaTable[] | Omit<Failure<string>, "success">;
 
 type ClearTableDataInput = {
 	credentials: DbCredentials;
@@ -44,60 +38,9 @@ type RestoreDumpInput = {
 	filePath: string;
 };
 
-type RestoreDumpResult = { success: true } | { success: false; error: string };
+type RestoreDumpResult = Result<object>;
 
 const DUMPS_DIRECTORY = "./exports/dumps";
-
-const hasDatabaseName = (
-	input: ActiveConnectionInput,
-): input is {
-	driver: string | null;
-	host: string | null;
-	port: number | null;
-	user: string | null;
-	password: string | null;
-	database_name: string | null;
-	use_ssh: number | null;
-	ssh_host: string | null;
-	ssh_port: number | null;
-	ssh_user: string | null;
-	ssh_private_key: string | null;
-} => "database_name" in input;
-
-const normalizeCredentials = (input: ActiveConnectionInput): DbCredentials => {
-	const driver = input.driver;
-
-	const normalizedDriver: DbCredentials["driver"] =
-		driver === "mysql" || driver === "sqlite" || driver === "postgres"
-			? driver
-			: "postgres";
-
-	return {
-		driver: normalizedDriver,
-		host: input.host ?? undefined,
-		port: input.port ?? undefined,
-		user: input.user ?? undefined,
-		password: input.password ?? undefined,
-		database: hasDatabaseName(input)
-			? (input.database_name ?? undefined)
-			: (input.database ?? undefined),
-		useSsh: hasDatabaseName(input)
-			? Boolean(input.use_ssh)
-			: (input.useSsh ?? false),
-		sshHost: hasDatabaseName(input)
-			? (input.ssh_host ?? undefined)
-			: (input.sshHost ?? undefined),
-		sshPort: hasDatabaseName(input)
-			? (input.ssh_port ?? undefined)
-			: (input.sshPort ?? undefined),
-		sshUser: hasDatabaseName(input)
-			? (input.ssh_user ?? undefined)
-			: (input.sshUser ?? undefined),
-		sshPrivateKey: hasDatabaseName(input)
-			? (input.ssh_private_key ?? undefined)
-			: (input.sshPrivateKey ?? undefined),
-	};
-};
 
 export type DumpFileInfo = {
 	path: string;
@@ -163,11 +106,9 @@ export const deleteDumpFn = createServerFn({ method: "POST" })
 				message: `Dump file deleted: ${filePath}`,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	});
@@ -233,11 +174,9 @@ export const restoreDumpFn = createServerFn({ method: "POST" })
 
 			return { success: true };
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		}
 	});
@@ -271,7 +210,7 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
 			}));
 		} catch (error) {
 			return {
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: extractErrorMessage(error),
 			};
 		}
 	});
@@ -289,11 +228,9 @@ export const clearTableDataFn = createServerFn({ method: "POST" })
 				message: `Table ${input.tableName} cleared`,
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		} finally {
 			await db.destroy();
@@ -305,40 +242,6 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
 	.handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
 		const db = getKyselyInstance(credentials);
 		let fkChecksDisabled = false;
-
-		const disableForeignKeyChecks = async () => {
-			if (credentials.driver === "postgres") {
-				await sql`SET session_replication_role = 'replica';`.execute(db);
-			}
-
-			if (credentials.driver === "mysql") {
-				await sql`SET FOREIGN_KEY_CHECKS = 0;`.execute(db);
-			}
-
-			if (credentials.driver === "sqlite") {
-				await sql`PRAGMA foreign_keys = OFF;`.execute(db);
-			}
-
-			fkChecksDisabled = true;
-		};
-
-		const restoreForeignKeyChecks = async () => {
-			if (!fkChecksDisabled) {
-				return;
-			}
-
-			if (credentials.driver === "postgres") {
-				await sql`SET session_replication_role = 'origin';`.execute(db);
-			}
-
-			if (credentials.driver === "mysql") {
-				await sql`SET FOREIGN_KEY_CHECKS = 1;`.execute(db);
-			}
-
-			if (credentials.driver === "sqlite") {
-				await sql`PRAGMA foreign_keys = ON;`.execute(db);
-			}
-		};
 
 		try {
 			const tables = await db.introspection.getTables();
@@ -352,7 +255,8 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
 					return tableName !== "sqlite_sequence";
 				});
 
-			await disableForeignKeyChecks();
+			await disableForeignKeyChecks(db, credentials.driver);
+			fkChecksDisabled = true;
 
 			for (const tableName of tableNames) {
 				await db.deleteFrom(tableName).execute();
@@ -363,15 +267,15 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
 				message: "All data wiped successfully.",
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		} finally {
 			try {
-				await restoreForeignKeyChecks();
+				if (fkChecksDisabled) {
+					await restoreForeignKeyChecks(db, credentials.driver);
+				}
 			} catch (error) {
 				console.error("Failed to restore foreign key checks:", error);
 			}
@@ -384,8 +288,7 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 	.inputValidator((credentials: DbCredentials) => credentials)
 	.handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
 		const db = getKyselyInstance(credentials);
-		let mysqlForeignKeyChecksDisabled = false;
-		let sqliteForeignKeysDisabled = false;
+		let fkChecksDisabled = false;
 
 		try {
 			const tables = await db.introspection.getTables();
@@ -403,23 +306,13 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 				for (const table of tables) {
 					await sql.raw(`DROP TABLE "${table.name}" CASCADE`).execute(db);
 				}
-			}
-
-			if (driver === "mysql") {
-				await sql.raw("SET FOREIGN_KEY_CHECKS = 0;").execute(db);
-				mysqlForeignKeyChecksDisabled = true;
+			} else {
+				await disableForeignKeyChecks(db, driver);
+				fkChecksDisabled = true;
 
 				for (const table of tables) {
-					await sql.raw(`DROP TABLE \`${table.name}\``).execute(db);
-				}
-			}
-
-			if (driver === "sqlite") {
-				await sql.raw("PRAGMA foreign_keys = OFF;").execute(db);
-				sqliteForeignKeysDisabled = true;
-
-				for (const table of tables) {
-					await sql.raw(`DROP TABLE "${table.name}"`).execute(db);
+					const quote = driver === "mysql" ? "`" : '"';
+					await sql.raw(`DROP TABLE ${quote}${table.name}${quote}`).execute(db);
 				}
 			}
 
@@ -428,20 +321,14 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 				message: "All tables dropped.",
 			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
 			return {
 				success: false,
-				error: message,
+				error: extractErrorMessage(error),
 			};
 		} finally {
 			try {
-				if (mysqlForeignKeyChecksDisabled) {
-					await sql.raw("SET FOREIGN_KEY_CHECKS = 1;").execute(db);
-				}
-
-				if (sqliteForeignKeysDisabled) {
-					await sql.raw("PRAGMA foreign_keys = ON;").execute(db);
+				if (fkChecksDisabled) {
+					await restoreForeignKeyChecks(db, credentials.driver);
 				}
 			} catch (error) {
 				console.error("Failed to restore foreign key checks:", error);

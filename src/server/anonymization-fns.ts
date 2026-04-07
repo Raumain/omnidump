@@ -9,6 +9,7 @@ import type {
 	RuleRow,
 	SaveRulesInput,
 } from "../lib/anonymization-types";
+import type { Success } from "../lib/result";
 import { db } from "./internal-db";
 
 /**
@@ -136,7 +137,7 @@ export const updateAnonymizationProfileFn = createServerFn({ method: "POST" })
  */
 export const deleteAnonymizationProfileFn = createServerFn({ method: "POST" })
 	.inputValidator((profileId: number) => profileId)
-	.handler(async ({ data: profileId }): Promise<{ success: boolean }> => {
+	.handler(async ({ data: profileId }): Promise<Success> => {
 		// Rules are deleted via CASCADE
 		db.query("DELETE FROM anonymization_profiles WHERE id = ?").run(profileId);
 
@@ -177,7 +178,7 @@ export const getAnonymizationRulesFn = createServerFn({ method: "GET" })
  */
 export const saveAnonymizationRulesFn = createServerFn({ method: "POST" })
 	.inputValidator((input: SaveRulesInput) => input)
-	.handler(async ({ data: input }): Promise<{ success: boolean }> => {
+	.handler(async ({ data: input }): Promise<Success> => {
 		// Delete existing rules
 		db.query("DELETE FROM anonymization_rules WHERE profile_id = ?").run(
 			input.profileId,

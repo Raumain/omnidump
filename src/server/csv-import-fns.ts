@@ -1,32 +1,31 @@
 import { createServerFn } from "@tanstack/react-start";
 import { parse } from "csv-parse";
 import { sql } from "kysely";
+import { CSV_SAMPLE_ROW_COUNT } from "../lib/constants";
+import { savedConnectionToCredentials } from "../lib/credentials";
 import {
 	type BatchImportTableConfig,
 	type CsvColumnDef,
 	type ForeignKeyDef,
 	getDbColumnType,
 } from "../lib/csv-import-types";
-import { type DbCredentials, getKyselyInstance } from "../lib/db/connection";
-import type { SavedConnection } from "./connection-fns";
+import { type DbDriver, getKyselyInstance } from "../lib/db/connection";
+import { extractErrorMessage } from "../lib/errors";
+import type { Result } from "../lib/result";
+import { quoteIdentifier } from "./db-helpers/sql-utils";
 import { getSavedConnectionById } from "./saved-connections";
 import { withTunnel } from "./ssh-tunnel";
-
-const SAMPLE_ROW_COUNT = 200;
 
 type AnalyzeCsvInput = {
 	fileContent: string;
 };
 
-type AnalyzeCsvResult =
-	| {
-			success: true;
-			headers: string[];
-			sampleRows: Record<string, string>[];
-			rowCount: number;
-			delimiter: "," | ";";
-	  }
-	| { success: false; error: string };
+type AnalyzeCsvResult = Result<{
+	headers: string[];
+	sampleRows: Record<string, string>[];
+	rowCount: number;
+	delimiter: "," | ";";
+}>;
 
 type CreateTableInput = {
 	connectionId: number;
@@ -35,30 +34,7 @@ type CreateTableInput = {
 	primaryKeyColumn: string | null;
 };
 
-type CreateTableResult = { success: true } | { success: false; error: string };
-
-const toDbCredentials = (connection: SavedConnection): DbCredentials => {
-	const normalizedDriver: DbCredentials["driver"] =
-		connection.driver === "mysql" ||
-		connection.driver === "sqlite" ||
-		connection.driver === "postgres"
-			? connection.driver
-			: "postgres";
-
-	return {
-		driver: normalizedDriver,
-		host: connection.host ?? undefined,
-		port: connection.port ?? undefined,
-		user: connection.user ?? undefined,
-		password: connection.password ?? undefined,
-		database: connection.database_name ?? undefined,
-		useSsh: Boolean(connection.use_ssh),
-		sshHost: connection.ssh_host ?? undefined,
-		sshPort: connection.ssh_port ?? undefined,
-		sshUser: connection.ssh_user ?? undefined,
-		sshPrivateKey: connection.ssh_private_key ?? undefined,
-	};
-};
+type CreateTableResult = Result<object>;
 
 /**
  * Analyze a CSV file and extract headers + sample rows
@@ -95,7 +71,7 @@ export const analyzeCsvFn = createServerFn({ method: "POST" })
 					let record: Record<string, string> | null = parser.read();
 					while (record !== null) {
 						rowCount++;
-						if (rows.length < SAMPLE_ROW_COUNT) {
+						if (rows.length < CSV_SAMPLE_ROW_COUNT) {
 							rows.push(record);
 						}
 						record = parser.read();
@@ -125,7 +101,7 @@ export const analyzeCsvFn = createServerFn({ method: "POST" })
 		} catch (error) {
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "CSV analysis failed",
+				error: extractErrorMessage(error, "CSV analysis failed"),
 			};
 		}
 	});
@@ -137,24 +113,17 @@ const buildCreateTableSql = (
 	tableName: string,
 	columns: CsvColumnDef[],
 	primaryKeyColumn: string | null,
-	driver: DbCredentials["driver"],
+	driver: DbDriver,
 ): string => {
-	const quoteName = (name: string): string => {
-		if (driver === "mysql") {
-			return `\`${name}\``;
-		}
-		return `"${name}"`;
-	};
-
 	const columnDefs = columns.map((col) => {
 		const columnType = col.userType ?? col.inferredType;
 		const sqlType = getDbColumnType(columnType, driver);
 		const nullability = col.nullable ? "" : " NOT NULL";
 		const pk = col.name === primaryKeyColumn ? " PRIMARY KEY" : "";
-		return `${quoteName(col.name)} ${sqlType}${nullability}${pk}`;
+		return `${quoteIdentifier(col.name, driver)} ${sqlType}${nullability}${pk}`;
 	});
 
-	return `CREATE TABLE ${quoteName(tableName)} (\n  ${columnDefs.join(",\n  ")}\n)`;
+	return `CREATE TABLE ${quoteIdentifier(tableName, driver)} (\n  ${columnDefs.join(",\n  ")}\n)`;
 };
 
 /**
@@ -169,7 +138,7 @@ export const createTableFn = createServerFn({ method: "POST" })
 			return { success: false, error: "Connection not found" };
 		}
 
-		const credentials = toDbCredentials(connection);
+		const credentials = savedConnectionToCredentials(connection);
 
 		try {
 			await withTunnel(credentials, async (tunneledCreds) => {
@@ -193,8 +162,7 @@ export const createTableFn = createServerFn({ method: "POST" })
 		} catch (error) {
 			return {
 				success: false,
-				error:
-					error instanceof Error ? error.message : "Failed to create table",
+				error: extractErrorMessage(error, "Failed to create table"),
 			};
 		}
 	});

@@ -5,6 +5,11 @@ import type { AnonymizationRule } from "../lib/anonymization-types";
 import type { DbCredentials } from "../lib/db/connection";
 import { getKyselyInstance } from "../lib/db/connection";
 import { createAnonymizer } from "./anonymizer";
+import {
+	getFKDisableStatement,
+	getFKEnableStatement,
+} from "./db-helpers/foreign-keys";
+import { escapeValue, quoteIdentifier } from "./db-helpers/sql-utils";
 import { withTunnel } from "./ssh-tunnel";
 
 type TableSchema = {
@@ -21,57 +26,6 @@ type AnonymizedDumpOptions = {
 	rules: AnonymizationRule[];
 	includeSchema: boolean;
 };
-
-/**
- * Escape a string value for SQL
- */
-function escapeValue(value: unknown, driver: DbCredentials["driver"]): string {
-	if (value === null || value === undefined) {
-		return "NULL";
-	}
-
-	if (typeof value === "number") {
-		if (Number.isNaN(value) || !Number.isFinite(value)) {
-			return "NULL";
-		}
-		return String(value);
-	}
-
-	if (typeof value === "boolean") {
-		if (driver === "mysql") {
-			return value ? "1" : "0";
-		}
-		return value ? "TRUE" : "FALSE";
-	}
-
-	if (value instanceof Date) {
-		return `'${value.toISOString()}'`;
-	}
-
-	if (typeof value === "object") {
-		// JSON objects/arrays
-		const jsonStr = JSON.stringify(value).replace(/'/g, "''");
-		return `'${jsonStr}'`;
-	}
-
-	// String escaping
-	const str = String(value).replace(/'/g, "''");
-	return `'${str}'`;
-}
-
-/**
- * Quote an identifier (table/column name) based on driver
- */
-function quoteIdentifier(
-	name: string,
-	driver: DbCredentials["driver"],
-): string {
-	if (driver === "mysql") {
-		return `\`${name.replace(/`/g, "``")}\``;
-	}
-	// PostgreSQL and SQLite use double quotes
-	return `"${name.replace(/"/g, '""')}"`;
-}
 
 /**
  * Generate CREATE TABLE statement from schema
@@ -212,13 +166,7 @@ export async function generateAnonymizedDump(
 			lines.push("");
 
 			// Disable foreign key checks for import
-			if (credentials.driver === "postgres") {
-				lines.push("SET session_replication_role = 'replica';");
-			} else if (credentials.driver === "mysql") {
-				lines.push("SET FOREIGN_KEY_CHECKS = 0;");
-			} else {
-				lines.push("PRAGMA foreign_keys = OFF;");
-			}
+			lines.push(getFKDisableStatement(credentials.driver));
 			lines.push("");
 
 			// Generate schema if requested
@@ -261,13 +209,7 @@ export async function generateAnonymizedDump(
 			}
 
 			// Re-enable foreign key checks
-			if (credentials.driver === "postgres") {
-				lines.push("SET session_replication_role = 'origin';");
-			} else if (credentials.driver === "mysql") {
-				lines.push("SET FOREIGN_KEY_CHECKS = 1;");
-			} else {
-				lines.push("PRAGMA foreign_keys = ON;");
-			}
+			lines.push(getFKEnableStatement(credentials.driver));
 
 			return lines.join("\n");
 		} finally {

@@ -152,7 +152,9 @@ const normalizeZodError = (error: z.ZodError): string => {
 	return error.issues.map((issue) => issue.message).join("; ");
 };
 
-export const parseBatchImportConfig = (raw: string): ParsedBatchImportConfig => {
+export const parseBatchImportConfig = (
+	raw: string,
+): ParsedBatchImportConfig => {
 	let parsedUnknown: unknown;
 	try {
 		parsedUnknown = JSON.parse(raw) as unknown;
@@ -310,7 +312,9 @@ const selectOneByColumns = async (
 		query = query.where(column as never, "=", value as never);
 	}
 
-	return (await query.executeTakeFirst()) as Record<string, unknown> | undefined;
+	return (await query.executeTakeFirst()) as
+		| Record<string, unknown>
+		| undefined;
 };
 
 const resolveParentKeyValue = async (
@@ -357,7 +361,10 @@ const executeTableWrite = async (
 	);
 
 	if (tablePolicy.writeMode === "insert") {
-		await db.insertInto(tablePolicy.tableName as never).values(values).execute();
+		await db
+			.insertInto(tablePolicy.tableName as never)
+			.values(values)
+			.execute();
 		return;
 	}
 
@@ -388,7 +395,10 @@ const executeTableWrite = async (
 			Object.keys(updateValues).length > 0
 				? updateValues
 				: Object.fromEntries(
-						tablePolicy.conflictColumns.map((column) => [column, values[column]]),
+						tablePolicy.conflictColumns.map((column) => [
+							column,
+							values[column],
+						]),
 					);
 
 		await db
@@ -467,7 +477,9 @@ export const normalizeImportError = (error: unknown): NormalizedImportError => {
 	};
 };
 
-export const formatImportErrorMessage = (error: NormalizedImportError): string => {
+export const formatImportErrorMessage = (
+	error: NormalizedImportError,
+): string => {
 	const code = error.code ? ` [${error.code}]` : "";
 	return `${error.stage.toUpperCase()}${code}: ${error.message}`;
 };
