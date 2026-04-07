@@ -190,6 +190,7 @@ function SchemaPage() {
 					<div className="lg:col-span-2 bg-card border-2 border-border shadow-hardware">
 						{selectedTableData ? (
 							<TableDetail
+								connectionId={activeConnection.id}
 								table={selectedTableData}
 								state={tableDetailState}
 								handlers={tableDetailHandlers}

@@ -2,6 +2,7 @@ import {
 	AlertTriangle,
 	ChevronDown,
 	Database,
+	Download,
 	Loader2,
 	Trash2,
 	Upload,
@@ -47,16 +48,23 @@ interface TableDetailHandlers {
 }
 
 interface TableDetailProps {
+	connectionId: number;
 	table: TableDetailData;
 	state: TableDetailState;
 	handlers: TableDetailHandlers;
 }
 
-export function TableDetail({ table, state, handlers }: TableDetailProps) {
+export function TableDetail({
+	connectionId,
+	table,
+	state,
+	handlers,
+}: TableDetailProps) {
 	const { tableName, columns } = table;
 	const { seedCount, isSeeding, isClearingTable, isImporting } = state;
 	const { onSeedCountChange, onSeed, onOpenImportDrawer, onClearTable } =
 		handlers;
+	const tableCsvExportHref = `/api/export-csv?connectionId=${connectionId}&scope=table&tableName=${encodeURIComponent(tableName)}`;
 
 	return (
 		<>
@@ -133,6 +141,19 @@ export function TableDetail({ table, state, handlers }: TableDetailProps) {
 				>
 					<Upload className="w-4 h-4 mr-2" />
 					Import CSV
+				</Button>
+
+				<Button
+					type="button"
+					asChild
+					variant="outline"
+					className="shadow-hardware active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
+					disabled={isImporting || isClearingTable || isSeeding}
+				>
+					<a href={tableCsvExportHref}>
+						<Download className="w-4 h-4 mr-2" />
+						Export CSV
+					</a>
 				</Button>
 
 				<AlertDialog>
