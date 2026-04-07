@@ -1,12 +1,33 @@
 import { faker } from "@faker-js/faker";
 import { createFileRoute } from "@tanstack/react-router";
+import { type Kysely, sql } from "kysely";
 
 import type { DbCredentials } from "../../lib/db/connection";
 import { extractErrorMessage } from "../../lib/errors";
 import type { SavedConnection } from "../../server/connection-fns";
+import { quoteIdentifier } from "../../server/db-helpers/sql-utils";
 
 const DEFAULT_SEED_COUNT = 10;
 const MAX_SEED_COUNT = 1000;
+const MAX_FOREIGN_KEY_VALUE_POOL_SIZE = 5000;
+
+type SeedRequestBody = {
+	connectionId?: unknown;
+	tableName?: unknown;
+	count?: unknown;
+};
+
+type SeedableColumn = {
+	name: string;
+	dataType: string;
+	isAutoIncrementing?: boolean;
+};
+
+type ForeignKeyConstraint = {
+	columnName: string;
+	referencedTableName: string;
+	referencedColumnName: string;
+};
 
 const toDbCredentials = (connection: SavedConnection): DbCredentials => {
 	const normalizedDriver: DbCredentials["driver"] =
@@ -26,20 +47,64 @@ const toDbCredentials = (connection: SavedConnection): DbCredentials => {
 	};
 };
 
-const parseSeedCount = (countParam: string | null): number => {
-	if (countParam === null || countParam.trim() === "") {
+const parseConnectionId = (connectionIdParam: unknown): number => {
+	const parsed =
+		typeof connectionIdParam === "number"
+			? connectionIdParam
+			: typeof connectionIdParam === "string"
+				? Number(connectionIdParam)
+				: Number.NaN;
+
+	if (!Number.isInteger(parsed) || parsed < 1) {
+		throw new Error("Invalid connectionId in body.");
+	}
+
+	return parsed;
+};
+
+const parseTableName = (tableNameParam: unknown): string => {
+	if (typeof tableNameParam !== "string" || tableNameParam.trim().length === 0) {
+		throw new Error("Invalid tableName in body.");
+	}
+
+	return tableNameParam.trim();
+};
+
+const parseSeedCount = (countParam: unknown): number => {
+	if (
+		countParam === undefined ||
+		countParam === null ||
+		(typeof countParam === "string" && countParam.trim() === "")
+	) {
 		return DEFAULT_SEED_COUNT;
 	}
 
-	const parsed = Number(countParam);
+	const parsed =
+		typeof countParam === "number"
+			? countParam
+			: typeof countParam === "string"
+				? Number(countParam)
+				: Number.NaN;
 
 	if (!Number.isInteger(parsed) || parsed < 1) {
-		throw new Error(
-			"Invalid count query parameter. Must be an integer greater than 0.",
-		);
+		throw new Error("Invalid count in body. Must be an integer greater than 0.");
 	}
 
 	return Math.min(parsed, MAX_SEED_COUNT);
+};
+
+export const parseSeedRequestBody = (
+	body: SeedRequestBody,
+): {
+	connectionId: number;
+	tableName: string;
+	count: number;
+} => {
+	return {
+		connectionId: parseConnectionId(body.connectionId),
+		tableName: parseTableName(body.tableName),
+		count: parseSeedCount(body.count),
+	};
 };
 
 const shouldSkipColumn = (column: {
@@ -147,6 +212,171 @@ const getValueForColumn = (column: {
 	return faker.lorem.word();
 };
 
+const getForeignKeyConstraintsForTable = async (
+	// biome-ignore lint/suspicious/noExplicitAny: Kysely generic for runtime introspection
+	db: Kysely<any>,
+	driver: DbCredentials["driver"],
+	tableName: string,
+): Promise<ForeignKeyConstraint[]> => {
+	if (driver === "postgres") {
+		const result = await sql<{
+			column_name: string;
+			referenced_table_name: string;
+			referenced_column_name: string;
+		}>`
+			SELECT
+				kcu.column_name AS column_name,
+				ccu.table_name AS referenced_table_name,
+				ccu.column_name AS referenced_column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+			JOIN information_schema.constraint_column_usage ccu
+				ON ccu.constraint_name = tc.constraint_name
+				AND ccu.table_schema = tc.table_schema
+			WHERE tc.constraint_type = 'FOREIGN KEY'
+				AND tc.table_schema = current_schema()
+				AND tc.table_name = ${tableName}
+		`.execute(db);
+
+		return result.rows.map((row) => ({
+			columnName: row.column_name,
+			referencedTableName: row.referenced_table_name,
+			referencedColumnName: row.referenced_column_name,
+		}));
+	}
+
+	if (driver === "mysql") {
+		const result = await sql<{
+			column_name: string;
+			referenced_table_name: string;
+			referenced_column_name: string;
+		}>`
+			SELECT
+				COLUMN_NAME AS column_name,
+				REFERENCED_TABLE_NAME AS referenced_table_name,
+				REFERENCED_COLUMN_NAME AS referenced_column_name
+			FROM information_schema.KEY_COLUMN_USAGE
+			WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = ${tableName}
+				AND REFERENCED_TABLE_NAME IS NOT NULL
+				AND REFERENCED_COLUMN_NAME IS NOT NULL
+		`.execute(db);
+
+		return result.rows.map((row) => ({
+			columnName: row.column_name,
+			referencedTableName: row.referenced_table_name,
+			referencedColumnName: row.referenced_column_name,
+		}));
+	}
+
+	const pragmaStatement = `PRAGMA foreign_key_list(${quoteIdentifier(tableName, "sqlite")});`;
+	const result = await sql.raw(pragmaStatement).execute(db);
+	const constraints: ForeignKeyConstraint[] = [];
+
+	for (const rawRow of result.rows as Array<Record<string, unknown>>) {
+		const columnName = rawRow.from;
+		const referencedTableName = rawRow.table;
+		const referencedColumnName = rawRow.to;
+
+		if (
+			typeof columnName !== "string" ||
+			typeof referencedTableName !== "string"
+		) {
+			continue;
+		}
+
+		if (typeof referencedColumnName !== "string" || referencedColumnName === "") {
+			throw new Error(
+				`Unsupported foreign key definition on ${tableName}.${columnName}. Referenced column must be explicit.`,
+			);
+		}
+
+		constraints.push({
+			columnName,
+			referencedTableName,
+			referencedColumnName,
+		});
+	}
+
+	return constraints;
+};
+
+const getForeignKeyValuePool = async (
+	// biome-ignore lint/suspicious/noExplicitAny: Kysely generic for runtime introspection
+	db: Kysely<any>,
+	driver: DbCredentials["driver"],
+	foreignKey: ForeignKeyConstraint,
+): Promise<unknown[]> => {
+	const quotedTable = quoteIdentifier(foreignKey.referencedTableName, driver);
+	const quotedColumn = quoteIdentifier(foreignKey.referencedColumnName, driver);
+	const statement = `
+		SELECT ${quotedColumn} AS value
+		FROM ${quotedTable}
+		WHERE ${quotedColumn} IS NOT NULL
+		LIMIT ${MAX_FOREIGN_KEY_VALUE_POOL_SIZE}
+	`;
+	const result = await sql.raw(statement).execute(db);
+
+	return (result.rows as Array<{ value: unknown }>).map((row) => row.value);
+};
+
+const buildForeignKeyValuePools = async (
+	// biome-ignore lint/suspicious/noExplicitAny: Kysely generic for runtime introspection
+	db: Kysely<any>,
+	driver: DbCredentials["driver"],
+	tableName: string,
+): Promise<Map<string, unknown[]>> => {
+	const foreignKeys = await getForeignKeyConstraintsForTable(db, driver, tableName);
+	const valuePoolsByColumn = new Map<string, unknown[]>();
+	const valuePoolCache = new Map<string, unknown[]>();
+
+	for (const foreignKey of foreignKeys) {
+		const poolCacheKey = `${foreignKey.referencedTableName}.${foreignKey.referencedColumnName}`;
+		let valuePool = valuePoolCache.get(poolCacheKey);
+
+		if (!valuePool) {
+			valuePool = await getForeignKeyValuePool(db, driver, foreignKey);
+			valuePoolCache.set(poolCacheKey, valuePool);
+		}
+
+		if (valuePool.length === 0) {
+			throw new Error(
+				`Cannot seed ${tableName}.${foreignKey.columnName}: no rows in referenced table ${foreignKey.referencedTableName}.${foreignKey.referencedColumnName}.`,
+			);
+		}
+
+		valuePoolsByColumn.set(foreignKey.columnName, valuePool);
+	}
+
+	return valuePoolsByColumn;
+};
+
+const pickRandomValue = (values: unknown[]): unknown => {
+	const index = faker.number.int({ min: 0, max: values.length - 1 });
+	return values[index];
+};
+
+export const getColumnSeedValue = (
+	column: SeedableColumn,
+	foreignKeyValuesByColumn: ReadonlyMap<string, unknown[]>,
+): unknown => {
+	const foreignKeyValues = foreignKeyValuesByColumn.get(column.name);
+
+	if (foreignKeyValues) {
+		if (foreignKeyValues.length === 0) {
+			throw new Error(
+				`Cannot seed ${column.name}: referenced key list is empty for foreign key column.`,
+			);
+		}
+
+		return pickRandomValue(foreignKeyValues);
+	}
+
+	return getValueForColumn(column);
+};
+
 export const Route = createFileRoute("/api/seed" as never)({
 	server: {
 		handlers: {
@@ -157,39 +387,23 @@ export const Route = createFileRoute("/api/seed" as never)({
 						import("../../lib/db/connection"),
 					]);
 
-				const url = new URL(request.url);
-				const connectionIdParam = url.searchParams.get("connectionId");
-				const tableName = url.searchParams.get("tableName");
-
-				if (!connectionIdParam || Number.isNaN(Number(connectionIdParam))) {
-					return Response.json(
-						{
-							success: false,
-							error: "Invalid connectionId query parameter.",
-						},
-						{ status: 400 },
-					);
-				}
-
-				if (!tableName || tableName.trim().length === 0) {
-					return Response.json(
-						{
-							success: false,
-							error: "Invalid tableName query parameter.",
-						},
-						{ status: 400 },
-					);
-				}
-
-				let count = DEFAULT_SEED_COUNT;
+				const body = (await request
+					.json()
+					.catch(() => ({}))) as Partial<SeedRequestBody>;
+				let connectionId = 0;
+				let tableName = "";
+				let count = 0;
 
 				try {
-					count = parseSeedCount(url.searchParams.get("count"));
+					const parsedBody = parseSeedRequestBody(body);
+					connectionId = parsedBody.connectionId;
+					tableName = parsedBody.tableName;
+					count = parsedBody.count;
 				} catch (error) {
 					const message =
 						error instanceof Error
 							? error.message
-							: "Invalid count query parameter.";
+							: "Invalid seed request body.";
 
 					return Response.json(
 						{
@@ -200,7 +414,7 @@ export const Route = createFileRoute("/api/seed" as never)({
 					);
 				}
 
-				const connection = getSavedConnectionById(Number(connectionIdParam));
+				const connection = getSavedConnectionById(connectionId);
 
 				if (!connection) {
 					return Response.json(
@@ -212,7 +426,8 @@ export const Route = createFileRoute("/api/seed" as never)({
 					);
 				}
 
-				const db = getKyselyInstance(toDbCredentials(connection));
+				const credentials = toDbCredentials(connection);
+				const db = getKyselyInstance(credentials);
 
 				try {
 					const tables = await db.introspection.getTables();
@@ -222,21 +437,25 @@ export const Route = createFileRoute("/api/seed" as never)({
 						throw new Error(`Table not found: ${tableName}`);
 					}
 
+					const foreignKeyValuePools = await buildForeignKeyValuePools(
+						db,
+						credentials.driver,
+						tableName,
+					);
 					const generatedRows: Array<Record<string, unknown>> = [];
 
 					for (let index = 0; index < count; index += 1) {
 						const row: Record<string, unknown> = {};
 
-						for (const rawColumn of table.columns as Array<{
-							name: string;
-							dataType: string;
-							isAutoIncrementing?: boolean;
-						}>) {
+						for (const rawColumn of table.columns as SeedableColumn[]) {
 							if (shouldSkipColumn(rawColumn)) {
 								continue;
 							}
 
-							row[rawColumn.name] = getValueForColumn(rawColumn);
+							row[rawColumn.name] = getColumnSeedValue(
+								rawColumn,
+								foreignKeyValuePools,
+							);
 						}
 
 						generatedRows.push(row);
