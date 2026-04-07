@@ -46,67 +46,74 @@ export const Route = createFileRoute("/api/export-csv" as never)({
 				const credentials = savedConnectionToCredentials(connection);
 
 				try {
-					const exportResult = await withTunnel(credentials, async (tunneledCreds) => {
-						const db = getKyselyInstance(tunneledCreds);
+					const exportResult = await withTunnel(
+						credentials,
+						async (tunneledCreds) => {
+							const db = getKyselyInstance(tunneledCreds);
 
-						try {
-							const tables = await db.introspection.getTables();
-							const tableByName = new Map(tables.map((table) => [table.name, table]));
+							try {
+								const tables = await db.introspection.getTables();
+								const tableByName = new Map(
+									tables.map((table) => [table.name, table]),
+								);
 
-							if (parsedQuery.scope === "table") {
-								const targetTable = tableByName.get(parsedQuery.tableName);
+								if (parsedQuery.scope === "table") {
+									const targetTable = tableByName.get(parsedQuery.tableName);
 
-								if (!targetTable) {
-									throw new TableNotFoundError(
-										`Table "${parsedQuery.tableName}" not found.`,
+									if (!targetTable) {
+										throw new TableNotFoundError(
+											`Table "${parsedQuery.tableName}" not found.`,
+										);
+									}
+
+									const rows = await db
+										.selectFrom(parsedQuery.tableName as never)
+										.selectAll()
+										.execute();
+									const headers = targetTable.columns.map(
+										(column) => column.name,
 									);
+									const csv = buildCsv(
+										headers,
+										rows as Array<Record<string, unknown>>,
+									);
+
+									return {
+										scope: "table" as const,
+										tableName: parsedQuery.tableName,
+										csv,
+									};
 								}
 
-								const rows = await db
-									.selectFrom(parsedQuery.tableName as never)
-									.selectAll()
-									.execute();
-								const headers = targetTable.columns.map((column) => column.name);
-								const csv = buildCsv(
-									headers,
-									rows as Array<Record<string, unknown>>,
-								);
+								const usedFileNames = new Set<string>();
+								const csvFiles = new Map<string, string>();
+
+								for (const table of tables) {
+									const rows = await db
+										.selectFrom(table.name as never)
+										.selectAll()
+										.execute();
+									const headers = table.columns.map((column) => column.name);
+									const csv = buildCsv(
+										headers,
+										rows as Array<Record<string, unknown>>,
+									);
+									const fileName = buildUniqueCsvFileName(
+										table.name,
+										usedFileNames,
+									);
+									csvFiles.set(fileName, csv);
+								}
 
 								return {
-									scope: "table" as const,
-									tableName: parsedQuery.tableName,
-									csv,
+									scope: "database" as const,
+									zipData: buildCsvZip(csvFiles),
 								};
+							} finally {
+								await db.destroy();
 							}
-
-							const usedFileNames = new Set<string>();
-							const csvFiles = new Map<string, string>();
-
-							for (const table of tables) {
-								const rows = await db
-									.selectFrom(table.name as never)
-									.selectAll()
-									.execute();
-								const headers = table.columns.map((column) => column.name);
-								const csv = buildCsv(
-									headers,
-									rows as Array<Record<string, unknown>>,
-								);
-								const fileName = buildUniqueCsvFileName(
-									table.name,
-									usedFileNames,
-								);
-								csvFiles.set(fileName, csv);
-							}
-
-							return {
-								scope: "database" as const,
-								zipData: buildCsvZip(csvFiles),
-							};
-						} finally {
-							await db.destroy();
-						}
-					});
+						},
+					);
 
 					if (exportResult.scope === "table") {
 						const safeTableName = sanitizeFileNamePart(exportResult.tableName);

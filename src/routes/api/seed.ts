@@ -63,7 +63,10 @@ const parseConnectionId = (connectionIdParam: unknown): number => {
 };
 
 const parseTableName = (tableNameParam: unknown): string => {
-	if (typeof tableNameParam !== "string" || tableNameParam.trim().length === 0) {
+	if (
+		typeof tableNameParam !== "string" ||
+		tableNameParam.trim().length === 0
+	) {
 		throw new Error("Invalid tableName in body.");
 	}
 
@@ -87,7 +90,9 @@ const parseSeedCount = (countParam: unknown): number => {
 				: Number.NaN;
 
 	if (!Number.isInteger(parsed) || parsed < 1) {
-		throw new Error("Invalid count in body. Must be an integer greater than 0.");
+		throw new Error(
+			"Invalid count in body. Must be an integer greater than 0.",
+		);
 	}
 
 	return Math.min(parsed, MAX_SEED_COUNT);
@@ -287,7 +292,10 @@ const getForeignKeyConstraintsForTable = async (
 			continue;
 		}
 
-		if (typeof referencedColumnName !== "string" || referencedColumnName === "") {
+		if (
+			typeof referencedColumnName !== "string" ||
+			referencedColumnName === ""
+		) {
 			throw new Error(
 				`Unsupported foreign key definition on ${tableName}.${columnName}. Referenced column must be explicit.`,
 			);
@@ -328,7 +336,11 @@ const buildForeignKeyValuePools = async (
 	driver: DbCredentials["driver"],
 	tableName: string,
 ): Promise<Map<string, unknown[]>> => {
-	const foreignKeys = await getForeignKeyConstraintsForTable(db, driver, tableName);
+	const foreignKeys = await getForeignKeyConstraintsForTable(
+		db,
+		driver,
+		tableName,
+	);
 	const valuePoolsByColumn = new Map<string, unknown[]>();
 	const valuePoolCache = new Map<string, unknown[]>();
 

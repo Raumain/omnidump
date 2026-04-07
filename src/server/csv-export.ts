@@ -50,7 +50,10 @@ export const parseCsvExportQuery = (url: URL): ParsedCsvExportQuery => {
 
 	const tableNameParam = url.searchParams.get("tableName");
 
-	if (typeof tableNameParam !== "string" || tableNameParam.trim().length === 0) {
+	if (
+		typeof tableNameParam !== "string" ||
+		tableNameParam.trim().length === 0
+	) {
 		throw new Error("Invalid tableName query parameter.");
 	}
 
@@ -111,7 +114,8 @@ export const buildUniqueCsvFileName = (
 export const buildCsvZip = (
 	files: ReadonlyMap<string, string> | Record<string, string>,
 ): Uint8Array => {
-	const entries = files instanceof Map ? [...files.entries()] : Object.entries(files);
+	const entries =
+		files instanceof Map ? [...files.entries()] : Object.entries(files);
 	entries.sort((a, b) => a[0].localeCompare(b[0]));
 
 	const zipEntries: Record<string, Uint8Array> = {};
