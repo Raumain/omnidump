@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VisualizationRouteImport } from './routes/visualization'
 import { Route as SchemaRouteImport } from './routes/schema'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTestConnectionRouteImport } from './routes/api/test-connection'
@@ -20,6 +21,11 @@ import { Route as ApiDumpRouteImport } from './routes/api/dump'
 import { Route as ApiDownloadRejectRouteImport } from './routes/api/download-reject'
 import { Route as ApiDownloadDumpRouteImport } from './routes/api/download-dump'
 
+const VisualizationRoute = VisualizationRouteImport.update({
+  id: '/visualization',
+  path: '/visualization',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SchemaRoute = SchemaRouteImport.update({
   id: '/schema',
   path: '/schema',
@@ -74,6 +80,7 @@ const ApiDownloadDumpRoute = ApiDownloadDumpRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/schema': typeof SchemaRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/schema': typeof SchemaRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/schema': typeof SchemaRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/schema'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/schema'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/schema'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -150,6 +162,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SchemaRoute: typeof SchemaRoute
+  VisualizationRoute: typeof VisualizationRoute
   ApiDownloadDumpRoute: typeof ApiDownloadDumpRoute
   ApiDownloadRejectRoute: typeof ApiDownloadRejectRoute
   ApiDumpRoute: typeof ApiDumpRoute
@@ -162,6 +175,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/visualization': {
+      id: '/visualization'
+      path: '/visualization'
+      fullPath: '/visualization'
+      preLoaderRoute: typeof VisualizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schema': {
       id: '/schema'
       path: '/schema'
@@ -238,6 +258,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SchemaRoute: SchemaRoute,
+  VisualizationRoute: VisualizationRoute,
   ApiDownloadDumpRoute: ApiDownloadDumpRoute,
   ApiDownloadRejectRoute: ApiDownloadRejectRoute,
   ApiDumpRoute: ApiDumpRoute,

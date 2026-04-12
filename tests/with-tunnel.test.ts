@@ -1,6 +1,15 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DbCredentials } from "../src/lib/db/connection";
-import { __setTunnelRuntimeForTests, withTunnel } from "../src/server/ssh-tunnel";
+import {
+	__resetTunnelPoolForTests,
+	__setTunnelPoolIdleTimeoutForTests,
+	__setTunnelRuntimeForTests,
+	withTunnel,
+} from "../src/server/ssh-tunnel";
+
+vi.mock("bun", () => ({
+	spawn: vi.fn(),
+}));
 
 const baseCredentials: DbCredentials = {
 	driver: "postgres",
@@ -70,8 +79,15 @@ const createMockProcess = (
 };
 
 describe("withTunnel", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		__setTunnelRuntimeForTests(null);
+		await __resetTunnelPoolForTests();
+	});
+
+	afterEach(async () => {
+		__setTunnelRuntimeForTests(null);
+		__setTunnelPoolIdleTimeoutForTests(10_000);
+		await __resetTunnelPoolForTests();
 	});
 
 	test("bypasses ssh flow when useSsh is disabled", async () => {
@@ -115,6 +131,7 @@ describe("withTunnel", () => {
 
 		expect(result).toBe("ok");
 		expect(canConnectAttempts).toBe(3);
+		await __resetTunnelPoolForTests();
 		expect(processMock.state.killed).toBe(true);
 		expect(removedTempDir).not.toBeNull();
 		if (removedTempDir === null) {
@@ -165,6 +182,7 @@ describe("withTunnel", () => {
 			}),
 		).rejects.toThrow("db probe failed");
 
+		await __resetTunnelPoolForTests();
 		expect(processMock.state.killed).toBe(true);
 		expect(rmCalls).toBe(1);
 	});

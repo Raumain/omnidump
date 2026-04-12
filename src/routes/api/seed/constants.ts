@@ -1,0 +1,3 @@
+export const DEFAULT_SEED_COUNT = 10;
+export const MAX_SEED_COUNT = 1000;
+export const MAX_FOREIGN_KEY_VALUE_POOL_SIZE = 5000;

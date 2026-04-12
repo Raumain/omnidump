@@ -177,6 +177,15 @@ function InnerLayout() {
 						>
 							Schema
 						</Link>
+						<Link
+							to="/visualization"
+							className="px-4 py-2 uppercase font-bold shadow-hardware text-sm border-2 border-border text-primary active:text-orange-500! active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-none"
+							activeProps={{
+								className: "!text-orange-400 bg-neutral-800",
+							}}
+						>
+							Visualization
+						</Link>
 					</nav>
 				</div>
 
