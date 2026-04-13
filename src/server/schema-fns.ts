@@ -1,10 +1,9 @@
-import { rmSync, statSync } from "node:fs";
+import { readdirSync, rmSync, statSync } from "node:fs";
 import { createServerFn } from "@tanstack/react-start";
-import { Glob } from "bun";
-import { sql } from "kysely";
+import { type Kysely, sql } from "kysely";
 
 import { normalizeCredentials } from "../lib/credentials";
-import { type DbCredentials, getKyselyInstance } from "../lib/db/connection";
+import type { DbCredentials } from "../lib/db/connection";
 import { extractErrorMessage } from "../lib/errors";
 import type { Failure, Result } from "../lib/result";
 import type { SavedConnection } from "./connection-fns";
@@ -12,6 +11,10 @@ import {
 	disableForeignKeyChecks,
 	restoreForeignKeyChecks,
 } from "./db-helpers/foreign-keys";
+import {
+	getForeignKeysForTable,
+	getPrimaryKeyColumnsForTable,
+} from "./db-helpers/introspection";
 import type { MessageServerFnResult } from "./result-types";
 import { withTunnel } from "./ssh-tunnel";
 
@@ -23,6 +26,12 @@ type SchemaTable = {
 		name: string;
 		dataType: string;
 		isNullable: boolean;
+		isPrimaryKey: boolean;
+	}>;
+	foreignKeys: Array<{
+		sourceColumn: string;
+		targetTable: string;
+		targetColumn: string;
 	}>;
 };
 
@@ -42,6 +51,18 @@ type RestoreDumpResult = Result<object>;
 
 const DUMPS_DIRECTORY = "./exports/dumps";
 
+type DatabaseConnection = Kysely<unknown>;
+type IntrospectedTable = Awaited<
+	ReturnType<DatabaseConnection["introspection"]["getTables"]>
+>[number];
+
+const createDatabaseConnection = async (
+	credentials: DbCredentials,
+): Promise<DatabaseConnection> => {
+	const { getKyselyInstance } = await import("../lib/db/connection");
+	return getKyselyInstance(credentials);
+};
+
 export type DumpFileInfo = {
 	path: string;
 	fileName: string;
@@ -49,29 +70,208 @@ export type DumpFileInfo = {
 	createdAt: string;
 };
 
+const toDumpFileInfo = (filePath: string): DumpFileInfo | null => {
+	try {
+		const fullPath = `${DUMPS_DIRECTORY}/${filePath}`;
+		const stats = statSync(fullPath);
+		const fileName = filePath.split("/").pop() ?? filePath;
+
+		return {
+			path: filePath,
+			fileName,
+			size: stats.size,
+			createdAt: stats.mtime.toISOString(),
+		};
+	} catch {
+		return null;
+	}
+};
+
+const scanDumpSqlFiles = (baseDirectory: string): string[] => {
+	const walk = (relativeDirectory: string): string[] => {
+		const absoluteDirectory = relativeDirectory
+			? `${baseDirectory}/${relativeDirectory}`
+			: baseDirectory;
+		const entries = readdirSync(absoluteDirectory, { withFileTypes: true });
+		const sqlFiles: string[] = [];
+
+		for (const entry of entries) {
+			const relativePath = relativeDirectory
+				? `${relativeDirectory}/${entry.name}`
+				: entry.name;
+
+			if (entry.isDirectory()) {
+				sqlFiles.push(...walk(relativePath));
+				continue;
+			}
+
+			if (entry.isFile() && entry.name.endsWith(".sql")) {
+				sqlFiles.push(relativePath);
+			}
+		}
+
+		return sqlFiles;
+	};
+
+	try {
+		return walk("");
+	} catch {
+		return [];
+	}
+};
+
+const spawnRestoreProcess = (
+	credentials: DbCredentials,
+	fullPath: string,
+): Bun.Subprocess => {
+	if (credentials.driver === "postgres") {
+		const commandArgs = [
+			"psql",
+			`postgresql://${credentials.user}:${credentials.password}@${credentials.host}:${credentials.port}/${credentials.database}`,
+			"-f",
+			fullPath,
+		];
+
+		return Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
+	}
+
+	if (credentials.driver === "mysql") {
+		const commandArgs = [
+			"mysql",
+			"-h",
+			credentials.host ?? "",
+			"-P",
+			(credentials.port ?? 0).toString(),
+			"-u",
+			credentials.user ?? "",
+			`-p${credentials.password ?? ""}`,
+			credentials.database ?? "",
+		];
+
+		const file = Bun.file(fullPath);
+
+		return Bun.spawn(commandArgs, {
+			stdin: file,
+			stdout: "ignore",
+			stderr: "pipe",
+		});
+	}
+
+	const commandArgs = [
+		"sqlite3",
+		credentials.database ?? "",
+		`.read ${fullPath}`,
+	];
+	return Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
+};
+
+const getRestoreErrorText = async (proc: Bun.Subprocess): Promise<string> => {
+	if (!proc.stderr || typeof proc.stderr === "number") {
+		return "Unknown error";
+	}
+
+	return new Response(proc.stderr).text();
+};
+
+const ensureRestoreSucceeded = async (proc: Bun.Subprocess): Promise<void> => {
+	const exitCode = await proc.exited;
+	if (exitCode === 0) {
+		return;
+	}
+
+	const errorText = await getRestoreErrorText(proc);
+	throw new Error(errorText);
+};
+
+const toSchemaTable = async (
+	db: DatabaseConnection,
+	driver: DbCredentials["driver"],
+	table: IntrospectedTable,
+): Promise<SchemaTable> => {
+	const primaryKeys = await getPrimaryKeyColumnsForTable(
+		db,
+		driver,
+		table.name,
+	);
+	const foreignKeys = await getForeignKeysForTable(db, driver, table.name);
+
+	return {
+		tableName: table.name,
+		columns: table.columns.map((column) => ({
+			name: column.name,
+			dataType: column.dataType,
+			isNullable: column.isNullable,
+			isPrimaryKey: primaryKeys.has(column.name),
+		})),
+		foreignKeys,
+	};
+};
+
+const loadSchemaTablesWithConnection = async (
+	credentials: DbCredentials,
+): Promise<SchemaTable[]> => {
+	const db = await createDatabaseConnection(credentials);
+
+	try {
+		const introspectedTables = await db.introspection.getTables();
+		const schemaTables: SchemaTable[] = [];
+
+		for (const table of introspectedTables) {
+			schemaTables.push(await toSchemaTable(db, credentials.driver, table));
+		}
+
+		return schemaTables;
+	} finally {
+		await db.destroy();
+	}
+};
+
+const getWipeTableNames = (
+	tables: IntrospectedTable[],
+	driver: DbCredentials["driver"],
+): string[] => {
+	return tables
+		.map((table) => table.name)
+		.filter(
+			(tableName) => driver !== "sqlite" || tableName !== "sqlite_sequence",
+		);
+};
+
+const restoreForeignKeyChecksIfNeeded = async (
+	db: DatabaseConnection,
+	driver: DbCredentials["driver"],
+	fkChecksDisabled: boolean,
+): Promise<void> => {
+	try {
+		if (fkChecksDisabled) {
+			await restoreForeignKeyChecks(db, driver);
+		}
+	} catch (error) {
+		console.error("Failed to restore foreign key checks:", error);
+	}
+};
+
+const dropTable = async (
+	db: DatabaseConnection,
+	driver: DbCredentials["driver"],
+	tableName: string,
+): Promise<void> => {
+	if (driver === "postgres") {
+		await sql.raw(`DROP TABLE "${tableName}" CASCADE`).execute(db);
+		return;
+	}
+
+	const quote = driver === "mysql" ? "`" : '"';
+	await sql.raw(`DROP TABLE ${quote}${tableName}${quote}`).execute(db);
+};
+
 export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
 	async (): Promise<DumpFileInfo[]> => {
 		try {
-			const glob = new Glob("**/*.sql");
-			const files = Array.from(glob.scanSync({ cwd: DUMPS_DIRECTORY }));
+			const files = scanDumpSqlFiles(DUMPS_DIRECTORY);
 
 			return files
-				.map((filePath) => {
-					try {
-						const fullPath = `${DUMPS_DIRECTORY}/${filePath}`;
-						const stats = statSync(fullPath);
-						const fileName = filePath.split("/").pop() ?? filePath;
-
-						return {
-							path: filePath,
-							fileName,
-							size: stats.size,
-							createdAt: stats.mtime.toISOString(),
-						};
-					} catch {
-						return null;
-					}
-				})
+				.map((filePath) => toDumpFileInfo(filePath))
 				.filter((info): info is DumpFileInfo => info !== null)
 				.sort(
 					(a, b) =>
@@ -116,62 +316,11 @@ export const deleteDumpFn = createServerFn({ method: "POST" })
 export const restoreDumpFn = createServerFn({ method: "POST" })
 	.inputValidator((input: RestoreDumpInput) => input)
 	.handler(async ({ data: input }): Promise<RestoreDumpResult> => {
-		const fullPath = `./exports/dumps/${input.filePath}`;
+		const fullPath = `${DUMPS_DIRECTORY}/${input.filePath}`;
 
 		try {
-			const credentials = input.credentials;
-			let proc: Bun.Subprocess;
-
-			if (credentials.driver === "postgres") {
-				const commandArgs = [
-					"psql",
-					`postgresql://${credentials.user}:${credentials.password}@${credentials.host}:${credentials.port}/${credentials.database}`,
-					"-f",
-					fullPath,
-				];
-
-				proc = Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
-			} else if (credentials.driver === "mysql") {
-				const commandArgs = [
-					"mysql",
-					"-h",
-					credentials.host ?? "",
-					"-P",
-					(credentials.port ?? 0).toString(),
-					"-u",
-					credentials.user ?? "",
-					`-p${credentials.password ?? ""}`,
-					credentials.database ?? "",
-				];
-
-				const file = Bun.file(fullPath);
-
-				proc = Bun.spawn(commandArgs, {
-					stdin: file,
-					stdout: "ignore",
-					stderr: "pipe",
-				});
-			} else {
-				const commandArgs = [
-					"sqlite3",
-					credentials.database ?? "",
-					`.read ${fullPath}`,
-				];
-
-				proc = Bun.spawn(commandArgs, { stdout: "ignore", stderr: "pipe" });
-			}
-
-			const exitCode = await proc.exited;
-
-			if (exitCode !== 0) {
-				const errorText =
-					proc.stderr && typeof proc.stderr !== "number"
-						? await new Response(proc.stderr).text()
-						: "Unknown error";
-
-				throw new Error(errorText);
-			}
-
+			const proc = spawnRestoreProcess(input.credentials, fullPath);
+			await ensureRestoreSucceeded(proc);
 			return { success: true };
 		} catch (error) {
 			return {
@@ -187,27 +336,10 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
 		const normalizedCredentials = normalizeCredentials(credentials);
 
 		try {
-			const tables = await withTunnel(
+			return await withTunnel(
 				normalizedCredentials,
-				async (tunneledCreds) => {
-					const db = getKyselyInstance(tunneledCreds);
-
-					try {
-						return await db.introspection.getTables();
-					} finally {
-						await db.destroy();
-					}
-				},
+				loadSchemaTablesWithConnection,
 			);
-
-			return tables.map((table) => ({
-				tableName: table.name,
-				columns: table.columns.map((column) => ({
-					name: column.name,
-					dataType: column.dataType,
-					isNullable: column.isNullable,
-				})),
-			}));
 		} catch (error) {
 			return {
 				error: extractErrorMessage(error),
@@ -218,10 +350,10 @@ export const getDatabaseSchemaFn = createServerFn({ method: "POST" })
 export const clearTableDataFn = createServerFn({ method: "POST" })
 	.inputValidator((input: ClearTableDataInput) => input)
 	.handler(async ({ data: input }): Promise<MessageServerFnResult> => {
-		const db = getKyselyInstance(input.credentials);
+		const db = await createDatabaseConnection(input.credentials);
 
 		try {
-			await db.deleteFrom(input.tableName).execute();
+			await db.deleteFrom(input.tableName as never).execute();
 
 			return {
 				success: true,
@@ -240,26 +372,18 @@ export const clearTableDataFn = createServerFn({ method: "POST" })
 export const wipeAllDataFn = createServerFn({ method: "POST" })
 	.inputValidator((credentials: DbCredentials) => credentials)
 	.handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
-		const db = getKyselyInstance(credentials);
+		const db = await createDatabaseConnection(credentials);
 		let fkChecksDisabled = false;
 
 		try {
 			const tables = await db.introspection.getTables();
-			const tableNames = tables
-				.map((table) => table.name)
-				.filter((tableName) => {
-					if (credentials.driver !== "sqlite") {
-						return true;
-					}
-
-					return tableName !== "sqlite_sequence";
-				});
+			const tableNames = getWipeTableNames(tables, credentials.driver);
 
 			await disableForeignKeyChecks(db, credentials.driver);
 			fkChecksDisabled = true;
 
 			for (const tableName of tableNames) {
-				await db.deleteFrom(tableName).execute();
+				await db.deleteFrom(tableName as never).execute();
 			}
 
 			return {
@@ -272,14 +396,11 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
 				error: extractErrorMessage(error),
 			};
 		} finally {
-			try {
-				if (fkChecksDisabled) {
-					await restoreForeignKeyChecks(db, credentials.driver);
-				}
-			} catch (error) {
-				console.error("Failed to restore foreign key checks:", error);
-			}
-
+			await restoreForeignKeyChecksIfNeeded(
+				db,
+				credentials.driver,
+				fkChecksDisabled,
+			);
 			await db.destroy();
 		}
 	});
@@ -287,7 +408,7 @@ export const wipeAllDataFn = createServerFn({ method: "POST" })
 export const dropAllTablesFn = createServerFn({ method: "POST" })
 	.inputValidator((credentials: DbCredentials) => credentials)
 	.handler(async ({ data: credentials }): Promise<MessageServerFnResult> => {
-		const db = getKyselyInstance(credentials);
+		const db = await createDatabaseConnection(credentials);
 		let fkChecksDisabled = false;
 
 		try {
@@ -301,19 +422,13 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 			}
 
 			const { driver } = credentials;
-
-			if (driver === "postgres") {
-				for (const table of tables) {
-					await sql.raw(`DROP TABLE "${table.name}" CASCADE`).execute(db);
-				}
-			} else {
+			if (driver !== "postgres") {
 				await disableForeignKeyChecks(db, driver);
 				fkChecksDisabled = true;
+			}
 
-				for (const table of tables) {
-					const quote = driver === "mysql" ? "`" : '"';
-					await sql.raw(`DROP TABLE ${quote}${table.name}${quote}`).execute(db);
-				}
+			for (const table of tables) {
+				await dropTable(db, driver, table.name);
 			}
 
 			return {
@@ -326,14 +441,11 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 				error: extractErrorMessage(error),
 			};
 		} finally {
-			try {
-				if (fkChecksDisabled) {
-					await restoreForeignKeyChecks(db, credentials.driver);
-				}
-			} catch (error) {
-				console.error("Failed to restore foreign key checks:", error);
-			}
-
+			await restoreForeignKeyChecksIfNeeded(
+				db,
+				credentials.driver,
+				fkChecksDisabled,
+			);
 			await db.destroy();
 		}
 	});

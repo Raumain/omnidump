@@ -6,7 +6,12 @@ import { DEFAULT_SSH_PORT } from "#/lib/constants";
 import type { DbCredentials } from "#/lib/db/connection";
 import { extractErrorMessage } from "#/lib/errors";
 import { getTunnelRuntime } from "./runtime";
-import type { PooledTunnel, SpawnedProcess } from "./types";
+import type { PooledTunnel, SpawnedProcess, TunnelRuntime } from "./types";
+
+const STARTUP_TIMEOUT_MS = 15_000;
+const POLLING_DELAY_MS = 50;
+const STDERR_BUFFER_LIMIT = 16_384;
+const PROCESS_KILL_GRACE_MS = 1_000;
 
 export const isCriticalSshStderr = (chunk: string): boolean => {
 	const normalized = chunk.toLowerCase();
@@ -16,45 +21,29 @@ export const isCriticalSshStderr = (chunk: string): boolean => {
 	);
 };
 
-export const waitForTunnelReadiness = async (
+const appendStderrChunk = (buffer: string, chunk: string): string => {
+	const nextBuffer = `${buffer}${chunk}`;
+	if (nextBuffer.length <= STDERR_BUFFER_LIMIT) {
+		return nextBuffer;
+	}
+
+	return nextBuffer.slice(-STDERR_BUFFER_LIMIT);
+};
+
+const startExitMonitor = (
 	proc: SpawnedProcess,
-	localPort: number,
-): Promise<void> => {
-	const runtime = getTunnelRuntime();
-	const startupTimeoutMs = 15_000;
-	const pollingDelayMs = 50;
-	const deadline = Date.now() + startupTimeoutMs;
-	let attempt = 0;
-	let stderrBuffer = "";
-	let hasSettled = false;
-	let stderrReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-	const stderrCleanupRef: { current: null | (() => Promise<void>) } = {
-		current: null,
-	};
-
-	let rejectFailFast: ((error: Error) => void) | null = null;
-	const failFastPromise = new Promise<never>((_resolve, reject) => {
-		rejectFailFast = reject;
-	});
-
-	const failFast = (error: Error) => {
-		if (hasSettled) {
-			return;
-		}
-
-		hasSettled = true;
-		rejectFailFast?.(error);
-	};
-
-	const monitorExit = async () => {
+	state: { hasSettled: boolean; stderrBuffer: string },
+	failFast: (error: Error) => void,
+): void => {
+	void (async () => {
 		try {
 			const exitCode = await proc.exited;
-			if (hasSettled) {
+			if (state.hasSettled) {
 				return;
 			}
 
 			if (exitCode !== 0) {
-				const details = stderrBuffer.trim();
+				const details = state.stderrBuffer.trim();
 				failFast(
 					new Error(
 						`SSH process exited with code ${exitCode}${details ? `: ${details}` : ""}`,
@@ -62,32 +51,31 @@ export const waitForTunnelReadiness = async (
 				);
 			}
 		} catch (error) {
-			if (hasSettled) {
+			if (state.hasSettled) {
 				return;
 			}
 
 			const message = extractErrorMessage(error);
 			failFast(new Error(`SSH process exit watcher failed: ${message}`));
 		}
-	};
+	})();
+};
 
-	const monitorStderr = async () => {
-		if (!proc.stderr || typeof proc.stderr === "number") {
-			return;
-		}
+const startStderrMonitor = (
+	proc: SpawnedProcess,
+	state: { hasSettled: boolean; stderrBuffer: string },
+	failFast: (error: Error) => void,
+): (() => Promise<void>) => {
+	if (!proc.stderr || typeof proc.stderr === "number") {
+		return async () => {};
+	}
 
-		const decoder = new TextDecoder();
-		stderrReader = proc.stderr.getReader();
-		stderrCleanupRef.current = async () => {
-			if (!stderrReader) {
-				return;
-			}
+	const decoder = new TextDecoder();
+	const stderrReader = proc.stderr.getReader();
 
-			await stderrReader.cancel().catch(() => {});
-		};
-
+	void (async () => {
 		try {
-			while (!hasSettled) {
+			while (!state.hasSettled) {
 				const { done, value } = await stderrReader.read();
 				if (done) {
 					break;
@@ -98,11 +86,7 @@ export const waitForTunnelReadiness = async (
 					continue;
 				}
 
-				stderrBuffer = `${stderrBuffer}${chunk}`;
-				if (stderrBuffer.length > 16_384) {
-					stderrBuffer = stderrBuffer.slice(-16_384);
-				}
-
+				state.stderrBuffer = appendStderrChunk(state.stderrBuffer, chunk);
 				console.error(`[SSH STDERR] ${chunk.trimEnd()}`);
 
 				if (isCriticalSshStderr(chunk)) {
@@ -115,28 +99,195 @@ export const waitForTunnelReadiness = async (
 				}
 			}
 		} catch (error) {
-			if (hasSettled) {
+			if (state.hasSettled) {
 				return;
 			}
 
 			const message = extractErrorMessage(error);
 			failFast(new Error(`SSH stderr watcher failed: ${message}`));
 		} finally {
-			stderrReader?.releaseLock();
+			stderrReader.releaseLock();
 		}
+	})();
+
+	return async () => {
+		await stderrReader.cancel().catch(() => {});
+	};
+};
+
+const killProcessWithGracePeriod = async (
+	proc: SpawnedProcess,
+): Promise<void> => {
+	const runtime = getTunnelRuntime();
+	proc.kill();
+	await Promise.race([proc.exited, runtime.sleep(PROCESS_KILL_GRACE_MS)]);
+};
+
+const removeTemporaryFile = (
+	path: string | null,
+	deleteMessage: (pathValue: string) => string,
+	failureMessage: (pathValue: string) => string,
+): void => {
+	if (!path) {
+		return;
+	}
+
+	try {
+		unlinkSync(path);
+		console.log(deleteMessage(path));
+	} catch {
+		console.warn(failureMessage(path));
+	}
+};
+
+const buildSshCommandArgs = (
+	credentials: DbCredentials,
+	localPort: number,
+	targetHost: string,
+	targetPort: number,
+): string[] => {
+	return [
+		"ssh",
+		"-N",
+		"-L",
+		`127.0.0.1:${localPort}:${targetHost}:${targetPort}`,
+		"-p",
+		(credentials.sshPort || DEFAULT_SSH_PORT).toString(),
+		"-o",
+		"StrictHostKeyChecking=no",
+		"-o",
+		"UserKnownHostsFile=/dev/null",
+		"-o",
+		"ExitOnForwardFailure=yes",
+		"-o",
+		"ConnectTimeout=15",
+		"-o",
+		"ServerAliveInterval=10",
+		"-o",
+		"ServerAliveCountMax=3",
+		"-o",
+		"LogLevel=ERROR",
+	];
+};
+
+const configurePrivateKeyAuth = async (
+	runtime: TunnelRuntime,
+	tempDir: string,
+	credentials: DbCredentials,
+	args: string[],
+): Promise<string | null> => {
+	if (!credentials.sshPrivateKey) {
+		return null;
+	}
+
+	const keyPath = join(tempDir, `id_rsa_${randomUUID()}`);
+	await runtime.writeFile(keyPath, credentials.sshPrivateKey, {
+		mode: 0o600,
+	});
+	chmodSync(keyPath, 0o600);
+	console.log(
+		`[SSH Tunnel] Wrote private key to temporary file with strict mode 0600: ${keyPath}`,
+	);
+	args.push("-i", keyPath);
+	return keyPath;
+};
+
+const configurePasswordAuth = async (
+	runtime: TunnelRuntime,
+	tempDir: string,
+	credentials: DbCredentials,
+	env: NodeJS.ProcessEnv,
+): Promise<string | null> => {
+	if (!credentials.sshPassword || credentials.sshPrivateKey) {
+		return null;
+	}
+
+	const askPassPath = join(tempDir, `askpass_${randomUUID()}.sh`);
+	const safePassword = credentials.sshPassword.replace(/"/g, '\\"');
+	await runtime.writeFile(askPassPath, `#!/bin/sh\necho "${safePassword}"`, {
+		mode: 0o700,
+	});
+	env.SSH_ASKPASS = askPassPath;
+	env.SSH_ASKPASS_REQUIRE = "force";
+	env.DISPLAY = "dummy:0";
+	console.log(`[SSH Tunnel] Created askpass helper script: ${askPassPath}`);
+	return askPassPath;
+};
+
+const cleanupOpenTunnelFailure = async (
+	runtime: TunnelRuntime,
+	proc: SpawnedProcess | null,
+	keyPath: string | null,
+	askPassPath: string | null,
+	tempDir: string,
+): Promise<void> => {
+	if (proc) {
+		try {
+			await killProcessWithGracePeriod(proc);
+		} catch {
+			// Ignore cleanup errors from a process that may already be gone.
+		}
+	}
+
+	if (keyPath) {
+		try {
+			unlinkSync(keyPath);
+		} catch {
+			// Ignore best-effort cleanup errors.
+		}
+	}
+
+	if (askPassPath) {
+		try {
+			unlinkSync(askPassPath);
+		} catch {
+			// Ignore best-effort cleanup errors.
+		}
+	}
+
+	await runtime.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+};
+
+export const waitForTunnelReadiness = async (
+	proc: SpawnedProcess,
+	localPort: number,
+): Promise<void> => {
+	const runtime = getTunnelRuntime();
+	const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+	let attempt = 0;
+	const state = {
+		hasSettled: false,
+		stderrBuffer: "",
+	};
+
+	let rejectFailFast: ((error: Error) => void) | null = null;
+	const failFastPromise = new Promise<never>((_resolve, reject) => {
+		rejectFailFast = reject;
+	});
+
+	const failFast = (error: Error) => {
+		if (state.hasSettled) {
+			return;
+		}
+
+		state.hasSettled = true;
+		rejectFailFast?.(error);
 	};
 
 	console.log(
-		`[SSH Tunnel] Waiting for local forward on 127.0.0.1:${localPort} (timeout=${startupTimeoutMs}ms, interval=${pollingDelayMs}ms)`,
+		`[SSH Tunnel] Waiting for local forward on 127.0.0.1:${localPort} (timeout=${STARTUP_TIMEOUT_MS}ms, interval=${POLLING_DELAY_MS}ms)`,
 	);
 
+	startExitMonitor(proc, state, failFast);
+	const stopStderrMonitor = startStderrMonitor(proc, state, failFast);
+
 	const pollUntilReady = async (): Promise<void> => {
-		while (Date.now() < deadline && !hasSettled) {
+		while (Date.now() < deadline && !state.hasSettled) {
 			attempt += 1;
 
 			const reachable = await runtime.canConnect("127.0.0.1", localPort, 200);
 			if (reachable) {
-				hasSettled = true;
+				state.hasSettled = true;
 				console.log(
 					`[SSH Tunnel] Local forward is reachable after ${attempt} probe attempts.`,
 				);
@@ -147,27 +298,22 @@ export const waitForTunnelReadiness = async (
 				`[SSH Tunnel] Probe #${attempt} failed, local port ${localPort} not ready yet.`,
 			);
 
-			await Promise.race([runtime.sleep(pollingDelayMs), failFastPromise]);
+			await Promise.race([runtime.sleep(POLLING_DELAY_MS), failFastPromise]);
 		}
 
-		if (!hasSettled) {
-			hasSettled = true;
+		if (!state.hasSettled) {
+			state.hasSettled = true;
 			throw new Error(
-				`SSH tunnel did not become reachable on 127.0.0.1:${localPort} within ${startupTimeoutMs}ms${stderrBuffer.trim() ? ` | stderr: ${stderrBuffer.trim()}` : ""}`,
+				`SSH tunnel did not become reachable on 127.0.0.1:${localPort} within ${STARTUP_TIMEOUT_MS}ms${state.stderrBuffer.trim() ? ` | stderr: ${state.stderrBuffer.trim()}` : ""}`,
 			);
 		}
 	};
 
-	void monitorExit();
-	void monitorStderr();
-
 	try {
 		await Promise.race([pollUntilReady(), failFastPromise]);
 	} finally {
-		hasSettled = true;
-		if (stderrCleanupRef.current) {
-			await stderrCleanupRef.current();
-		}
+		state.hasSettled = true;
+		await stopStderrMonitor();
 	}
 };
 
@@ -184,8 +330,7 @@ export const cleanupTunnelResources = async (
 
 	try {
 		console.log("[SSH Tunnel] Killing SSH child process.");
-		tunnel.proc.kill();
-		await Promise.race([tunnel.proc.exited, runtime.sleep(1000)]);
+		await killProcessWithGracePeriod(tunnel.proc);
 		console.log("[SSH Tunnel] SSH child process terminated.");
 	} catch {
 		console.warn(
@@ -193,31 +338,18 @@ export const cleanupTunnelResources = async (
 		);
 	}
 
-	if (tunnel.keyPath) {
-		try {
-			unlinkSync(tunnel.keyPath);
-			console.log(
-				`[SSH Tunnel] Deleted temporary private key file: ${tunnel.keyPath}`,
-			);
-		} catch {
-			console.warn(
-				`[SSH Tunnel] Could not delete temporary private key file: ${tunnel.keyPath}`,
-			);
-		}
-	}
+	removeTemporaryFile(
+		tunnel.keyPath,
+		(path) => `[SSH Tunnel] Deleted temporary private key file: ${path}`,
+		(path) =>
+			`[SSH Tunnel] Could not delete temporary private key file: ${path}`,
+	);
 
-	if (tunnel.askPassPath) {
-		try {
-			unlinkSync(tunnel.askPassPath);
-			console.log(
-				`[SSH Tunnel] Deleted temporary askpass file: ${tunnel.askPassPath}`,
-			);
-		} catch {
-			console.warn(
-				`[SSH Tunnel] Could not delete temporary askpass file: ${tunnel.askPassPath}`,
-			);
-		}
-	}
+	removeTemporaryFile(
+		tunnel.askPassPath,
+		(path) => `[SSH Tunnel] Deleted temporary askpass file: ${path}`,
+		(path) => `[SSH Tunnel] Could not delete temporary askpass file: ${path}`,
+	);
 
 	console.log(`[SSH Tunnel] Removing temporary directory: ${tunnel.tempDir}`);
 	await runtime
@@ -244,57 +376,25 @@ export const openTunnel = async (
 	try {
 		console.log(`[SSH Tunnel] Created temporary directory: ${tempDir}`);
 		const env = { ...process.env };
+		const args = buildSshCommandArgs(
+			credentials,
+			localPort,
+			targetHost,
+			targetPort,
+		);
 
-		const args = [
-			"ssh",
-			"-N",
-			"-L",
-			`127.0.0.1:${localPort}:${targetHost}:${targetPort}`,
-			"-p",
-			(credentials.sshPort || DEFAULT_SSH_PORT).toString(),
-			"-o",
-			"StrictHostKeyChecking=no",
-			"-o",
-			"UserKnownHostsFile=/dev/null",
-			"-o",
-			"ExitOnForwardFailure=yes",
-			"-o",
-			"ConnectTimeout=15",
-			"-o",
-			"ServerAliveInterval=10",
-			"-o",
-			"ServerAliveCountMax=3",
-			"-o",
-			"LogLevel=ERROR",
-		];
-
-		if (credentials.sshPrivateKey) {
-			keyPath = join(tempDir, `id_rsa_${randomUUID()}`);
-			await runtime.writeFile(keyPath, credentials.sshPrivateKey, {
-				mode: 0o600,
-			});
-			chmodSync(keyPath, 0o600);
-			console.log(
-				`[SSH Tunnel] Wrote private key to temporary file with strict mode 0600: ${keyPath}`,
-			);
-			args.push("-i", keyPath);
-		}
-
-		if (credentials.sshPassword && !credentials.sshPrivateKey) {
-			askPassPath = join(tempDir, `askpass_${randomUUID()}.sh`);
-			const safePassword = credentials.sshPassword.replace(/"/g, '\\"');
-			await runtime.writeFile(
-				askPassPath,
-				`#!/bin/sh\necho "${safePassword}"`,
-				{
-					mode: 0o700,
-				},
-			);
-			env.SSH_ASKPASS = askPassPath;
-			env.SSH_ASKPASS_REQUIRE = "force";
-			env.DISPLAY = "dummy:0";
-			console.log(`[SSH Tunnel] Created askpass helper script: ${askPassPath}`);
-		}
+		keyPath = await configurePrivateKeyAuth(
+			runtime,
+			tempDir,
+			credentials,
+			args,
+		);
+		askPassPath = await configurePasswordAuth(
+			runtime,
+			tempDir,
+			credentials,
+			env,
+		);
 
 		args.push(`${credentials.sshUser}@${credentials.sshHost}`);
 
@@ -339,33 +439,13 @@ export const openTunnel = async (
 		return tunnel;
 	} catch (error) {
 		console.error("[SSH Tunnel Error - Tunnel Core Process]", error);
-
-		if (proc) {
-			try {
-				proc.kill();
-				await Promise.race([proc.exited, runtime.sleep(1000)]);
-			} catch {
-				// Ignore cleanup errors from a process that may already be gone.
-			}
-		}
-
-		if (keyPath) {
-			try {
-				unlinkSync(keyPath);
-			} catch {
-				// Ignore best-effort cleanup errors.
-			}
-		}
-
-		if (askPassPath) {
-			try {
-				unlinkSync(askPassPath);
-			} catch {
-				// Ignore best-effort cleanup errors.
-			}
-		}
-
-		await runtime.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		await cleanupOpenTunnelFailure(
+			runtime,
+			proc,
+			keyPath,
+			askPassPath,
+			tempDir,
+		);
 		throw error;
 	}
 };

@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
+import { savedConnectionToDbCredentials } from "../../lib/credentials";
 import type { DbCredentials } from "../../lib/db/connection";
 import { extractErrorMessage } from "../../lib/errors";
-import type { SavedConnection } from "../../server/connection-fns";
 
 type DumpType = "data" | "both";
 
@@ -18,22 +18,20 @@ type DumpRequestBody = {
 const isDumpType = (value: string | null | undefined): value is DumpType =>
 	value === "data" || value === "both";
 
-const toDbCredentials = (connection: SavedConnection): DbCredentials => {
-	const normalizedDriver: DbCredentials["driver"] =
-		connection.driver === "mysql" ||
-		connection.driver === "sqlite" ||
-		connection.driver === "postgres"
-			? connection.driver
-			: "postgres";
+type ParsedDumpRequest = {
+	connectionIdParam: Partial<DumpRequestBody>["connectionId"];
+	connectionId: number;
+	dumpType: DumpType;
+	tables: string[] | undefined;
+	download: boolean;
+	anonymize: boolean;
+	profileId: number | undefined;
+};
 
-	return {
-		driver: normalizedDriver,
-		host: connection.host ?? undefined,
-		port: connection.port ?? undefined,
-		user: connection.user ?? undefined,
-		password: connection.password ?? undefined,
-		database: connection.database_name ?? undefined,
-	};
+type DumpFileTarget = {
+	dirPath: string;
+	fileName: string;
+	filePath: string;
 };
 
 const requireValue = (
@@ -118,6 +116,89 @@ const buildCommandArgs = (
 	return ["sqlite3", database, ".dump"];
 };
 
+const parseDumpRequest = async (
+	request: Request,
+): Promise<ParsedDumpRequest> => {
+	const body = (await request
+		.json()
+		.catch(() => ({}))) as Partial<DumpRequestBody>;
+	const connectionIdParam = body.connectionId;
+	const dumpTypeParam = body.type;
+	const tablesParam = body.tables;
+
+	return {
+		connectionIdParam,
+		connectionId: Number(connectionIdParam),
+		dumpType: isDumpType(dumpTypeParam) ? dumpTypeParam : "both",
+		tables: Array.isArray(tablesParam)
+			? tablesParam.filter(
+					(tableName): tableName is string =>
+						typeof tableName === "string" && tableName.length > 0,
+				)
+			: undefined,
+		download: body.download ?? false,
+		anonymize: body.anonymize ?? false,
+		profileId: body.profileId,
+	};
+};
+
+const buildDumpFileTarget = (
+	connectionName: string,
+	dumpType: DumpType,
+	anonymize: boolean,
+): DumpFileTarget => {
+	const dirPath = `./exports/dumps/${connectionName || "default"}/default`;
+	const dumpPrefix = anonymize ? "anon" : dumpType === "data" ? "data" : "dump";
+	const timestamp = Date.now();
+	const fileName = `${dumpPrefix}_${timestamp}.sql`;
+	const filePath = `${dirPath}/${fileName}`;
+
+	return { dirPath, fileName, filePath };
+};
+
+const createDownloadResponse = (
+	content: BodyInit,
+	fileName: string,
+	filePath: string,
+): Response =>
+	new Response(content, {
+		status: 200,
+		headers: {
+			"Content-Type": "application/sql",
+			"Content-Disposition": `attachment; filename="${fileName}"`,
+			"X-File-Path": filePath,
+			"X-File-Name": fileName,
+		},
+	});
+
+const runNativeDump = async (
+	credentials: DbCredentials,
+	dumpType: DumpType,
+	tables: string[] | undefined,
+	filePath: string,
+) => {
+	const commandArgs = buildCommandArgs(credentials, dumpType, tables);
+	const file = Bun.file(filePath);
+	const proc = Bun.spawn(commandArgs, {
+		stdout: file,
+		stderr: "pipe",
+		stdin: "ignore",
+	});
+
+	const exitCode = await proc.exited;
+
+	if (exitCode !== 0) {
+		const errorText = await new Response(proc.stderr).text();
+		const fileCheck = Bun.file(filePath);
+
+		if ((await fileCheck.exists()) && fileCheck.size === 0) {
+			rmSync(filePath, { force: true });
+		}
+
+		throw new Error(errorText);
+	}
+};
+
 export const Route = createFileRoute("/api/dump" as never)({
 	server: {
 		handlers: {
@@ -126,28 +207,15 @@ export const Route = createFileRoute("/api/dump" as never)({
 					const { getSavedConnectionById } = await import(
 						"../../server/saved-connections"
 					);
-
-					const body = (await request
-						.json()
-						.catch(() => ({}))) as Partial<DumpRequestBody>;
-					const connectionIdParam = body.connectionId;
-					const dumpTypeParam = body.type;
-					const tablesParam = body.tables;
-					const downloadParam = body.download ?? false;
-					const anonymizeParam = body.anonymize ?? false;
-					const profileIdParam = body.profileId;
-
-					const connectionId = Number(connectionIdParam);
-					const dumpType: DumpType = isDumpType(dumpTypeParam)
-						? dumpTypeParam
-						: "both";
-
-					// Validate tables array if provided
-					const tables = Array.isArray(tablesParam)
-						? tablesParam.filter(
-								(t): t is string => typeof t === "string" && t.length > 0,
-							)
-						: undefined;
+					const {
+						connectionIdParam,
+						connectionId,
+						dumpType,
+						tables,
+						download,
+						anonymize,
+						profileId,
+					} = await parseDumpRequest(request);
 
 					if (!connectionIdParam || Number.isNaN(connectionId)) {
 						return new Response("Invalid connectionId in body.", {
@@ -161,20 +229,16 @@ export const Route = createFileRoute("/api/dump" as never)({
 						return new Response("Connection not found.", { status: 404 });
 					}
 
-					const credentials = toDbCredentials(connection);
-					const dirPath = `./exports/dumps/${connection.name || "default"}/default`;
-					const dumpPrefix = anonymizeParam
-						? "anon"
-						: dumpType === "data"
-							? "data"
-							: "dump";
-					const timestamp = Date.now();
-					const fileName = `${dumpPrefix}_${timestamp}.sql`;
-					const filePath = `${dirPath}/${fileName}`;
+					const credentials = savedConnectionToDbCredentials(connection);
+					const { dirPath, fileName, filePath } = buildDumpFileTarget(
+						connection.name,
+						dumpType,
+						anonymize,
+					);
 					mkdirSync(dirPath, { recursive: true });
 
 					// If anonymization is requested, use the anonymized dump generator
-					if (anonymizeParam && profileIdParam) {
+					if (anonymize && profileId) {
 						const { getAnonymizationRulesFn } = await import(
 							"../../server/anonymization-fns"
 						);
@@ -183,7 +247,7 @@ export const Route = createFileRoute("/api/dump" as never)({
 						);
 
 						const rules = await getAnonymizationRulesFn({
-							data: profileIdParam,
+							data: profileId,
 						});
 
 						if (rules.length === 0) {
@@ -206,16 +270,8 @@ export const Route = createFileRoute("/api/dump" as never)({
 
 						writeFileSync(filePath, dumpContent, "utf-8");
 
-						if (downloadParam) {
-							return new Response(dumpContent, {
-								status: 200,
-								headers: {
-									"Content-Type": "application/sql",
-									"Content-Disposition": `attachment; filename="${fileName}"`,
-									"X-File-Path": filePath,
-									"X-File-Name": fileName,
-								},
-							});
+						if (download) {
+							return createDownloadResponse(dumpContent, fileName, filePath);
 						}
 
 						return Response.json({
@@ -228,40 +284,13 @@ export const Route = createFileRoute("/api/dump" as never)({
 
 					// Standard native dump (pg_dump, mysqldump, etc.)
 
-					const commandArgs = buildCommandArgs(credentials, dumpType, tables);
-					const file = Bun.file(filePath);
-					const proc = Bun.spawn(commandArgs, {
-						stdout: file,
-						stderr: "pipe",
-						stdin: "ignore",
-					});
-
-					const exitCode = await proc.exited;
-
-					if (exitCode !== 0) {
-						const errorText = await new Response(proc.stderr).text();
-						const fileCheck = Bun.file(filePath);
-
-						if ((await fileCheck.exists()) && fileCheck.size === 0) {
-							rmSync(filePath, { force: true });
-						}
-
-						throw new Error(errorText);
-					}
+					await runNativeDump(credentials, dumpType, tables, filePath);
 
 					// If download requested, return the file content
-					if (downloadParam) {
+					if (download) {
 						const fileContent = readFileSync(filePath);
 
-						return new Response(fileContent, {
-							status: 200,
-							headers: {
-								"Content-Type": "application/sql",
-								"Content-Disposition": `attachment; filename="${fileName}"`,
-								"X-File-Path": filePath,
-								"X-File-Name": fileName,
-							},
-						});
+						return createDownloadResponse(fileContent, fileName, filePath);
 					}
 
 					return Response.json({

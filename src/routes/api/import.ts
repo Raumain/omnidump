@@ -2,35 +2,36 @@ import { mkdirSync } from "node:fs";
 import { createFileRoute } from "@tanstack/react-router";
 import { parse } from "csv-parse";
 
-import type { DbCredentials } from "../../lib/db/connection";
+import { savedConnectionToDbCredentials } from "../../lib/credentials";
 import { extractErrorMessage } from "../../lib/errors";
-import type { SavedConnection } from "../../server/connection-fns";
 
 const IMPORT_BATCH_SIZE = 1000;
+
+type ParsedImportRequest = {
+	file: File;
+	connectionId: number;
+	tableName: string;
+	mapping: Record<string, string>;
+};
+
+type ImportBatchRow = {
+	mappedRow: Record<string, unknown>;
+	originalRecord: Record<string, unknown>;
+};
+
+type ImportEventPayload = {
+	successfulRows: number;
+	failedRows: number;
+	status: "processing" | "completed" | "failed";
+	error?: string;
+	rejectFileName?: string;
+};
 
 const toCsvCell = (value: unknown): string => {
 	const normalized = value === null || value === undefined ? "" : String(value);
 	const escaped = normalized.replaceAll('"', '""');
 
 	return `"${escaped}"`;
-};
-
-const toDbCredentials = (connection: SavedConnection): DbCredentials => {
-	const normalizedDriver: DbCredentials["driver"] =
-		connection.driver === "mysql" ||
-		connection.driver === "sqlite" ||
-		connection.driver === "postgres"
-			? connection.driver
-			: "postgres";
-
-	return {
-		driver: normalizedDriver,
-		host: connection.host ?? undefined,
-		port: connection.port ?? undefined,
-		user: connection.user ?? undefined,
-		password: connection.password ?? undefined,
-		database: connection.database_name ?? undefined,
-	};
 };
 
 const isRecordStringMap = (value: unknown): value is Record<string, string> => {
@@ -40,6 +41,93 @@ const isRecordStringMap = (value: unknown): value is Record<string, string> => {
 
 	return Object.values(value).every((entry) => typeof entry === "string");
 };
+
+const importErrorResponse = (error: string, status = 400): Response =>
+	Response.json({ success: false, error }, { status });
+
+const parseImportRequest = (
+	formData: FormData,
+): ParsedImportRequest | Response => {
+	const file = formData.get("file");
+	const connectionId = formData.get("connectionId");
+	const tableName = formData.get("tableName");
+	const mappingRaw = formData.get("mapping");
+
+	if (!(file instanceof File)) {
+		return importErrorResponse("Missing CSV file.");
+	}
+
+	if (typeof connectionId !== "string" || connectionId.trim() === "") {
+		return importErrorResponse("Missing connectionId.");
+	}
+
+	if (typeof tableName !== "string" || tableName.trim() === "") {
+		return importErrorResponse("Missing tableName.");
+	}
+
+	if (typeof mappingRaw !== "string") {
+		return importErrorResponse("Missing mapping.");
+	}
+
+	let mapping: Record<string, string>;
+
+	try {
+		const parsed = JSON.parse(mappingRaw) as unknown;
+
+		if (!isRecordStringMap(parsed)) {
+			return importErrorResponse("Invalid mapping format.");
+		}
+
+		mapping = parsed;
+	} catch {
+		return importErrorResponse("Mapping must be valid JSON.");
+	}
+
+	const parsedConnectionId = Number(connectionId);
+
+	if (Number.isNaN(parsedConnectionId)) {
+		return importErrorResponse("Invalid connectionId.");
+	}
+
+	return {
+		file,
+		connectionId: parsedConnectionId,
+		tableName,
+		mapping,
+	};
+};
+
+const sendImportEvent = (
+	controller: ReadableStreamDefaultController<Uint8Array>,
+	encoder: TextEncoder,
+	payload: ImportEventPayload,
+) => {
+	controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+};
+
+const mapRecordToRow = (
+	record: Record<string, unknown>,
+	mapping: Record<string, string>,
+): Record<string, unknown> => {
+	const mappedRow: Record<string, unknown> = {};
+
+	for (const [csvHeader, dbColumn] of Object.entries(mapping)) {
+		if (!dbColumn) {
+			continue;
+		}
+
+		mappedRow[dbColumn] = record[csvHeader];
+	}
+
+	return mappedRow;
+};
+
+const buildRejectRowLine = (
+	headers: string[],
+	record: Record<string, unknown>,
+	errorMessage: string,
+): string =>
+	`${headers.map((header) => toCsvCell(record[header])).join(",")},${toCsvCell(errorMessage)}\n`;
 
 export const Route = createFileRoute("/api/import")({
 	server: {
@@ -51,79 +139,23 @@ export const Route = createFileRoute("/api/import")({
 						import("../../lib/db/connection"),
 					]);
 
-				const formData = await request.formData();
-				const file = formData.get("file");
-				const connectionId = formData.get("connectionId");
-				const tableName = formData.get("tableName");
-				const mappingRaw = formData.get("mapping");
+				const parsedRequest = parseImportRequest(await request.formData());
 
-				if (!(file instanceof File)) {
-					return Response.json(
-						{ success: false, error: "Missing CSV file." },
-						{ status: 400 },
-					);
+				if (parsedRequest instanceof Response) {
+					return parsedRequest;
 				}
 
-				if (typeof connectionId !== "string" || connectionId.trim() === "") {
-					return Response.json(
-						{ success: false, error: "Missing connectionId." },
-						{ status: 400 },
-					);
-				}
+				const { file, connectionId, tableName, mapping } = parsedRequest;
 
-				if (typeof tableName !== "string" || tableName.trim() === "") {
-					return Response.json(
-						{ success: false, error: "Missing tableName." },
-						{ status: 400 },
-					);
-				}
-
-				if (typeof mappingRaw !== "string") {
-					return Response.json(
-						{ success: false, error: "Missing mapping." },
-						{ status: 400 },
-					);
-				}
-
-				let mapping: Record<string, string>;
-
-				try {
-					const parsed = JSON.parse(mappingRaw) as unknown;
-
-					if (!isRecordStringMap(parsed)) {
-						return Response.json(
-							{ success: false, error: "Invalid mapping format." },
-							{ status: 400 },
-						);
-					}
-
-					mapping = parsed;
-				} catch {
-					return Response.json(
-						{ success: false, error: "Mapping must be valid JSON." },
-						{ status: 400 },
-					);
-				}
-
-				const parsedConnectionId = Number(connectionId);
-
-				if (Number.isNaN(parsedConnectionId)) {
-					return Response.json(
-						{ success: false, error: "Invalid connectionId." },
-						{ status: 400 },
-					);
-				}
-
-				const connection = getSavedConnectionById(parsedConnectionId);
+				const connection = getSavedConnectionById(connectionId);
 
 				if (!connection) {
-					return Response.json(
-						{ success: false, error: "Connection not found." },
-						{ status: 404 },
-					);
+					return importErrorResponse("Connection not found.", 404);
 				}
 
-				const db = getKyselyInstance(toDbCredentials(connection));
+				const db = getKyselyInstance(
+					savedConnectionToDbCredentials(connection),
+				);
 				const encoder = new TextEncoder();
 
 				const stream = new ReadableStream({
@@ -138,18 +170,6 @@ export const Route = createFileRoute("/api/import")({
 						const rejectWriter = Bun.file(rejectFilePath).writer();
 						let rejectWriterClosed = false;
 						let csvHeaders: string[] = [];
-
-						const sendEvent = (payload: {
-							successfulRows: number;
-							failedRows: number;
-							status: "processing" | "completed" | "failed";
-							error?: string;
-							rejectFileName?: string;
-						}) => {
-							controller.enqueue(
-								encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-							);
-						};
 
 						const closeController = () => {
 							if (isClosed) {
@@ -198,10 +218,7 @@ export const Route = createFileRoute("/api/import")({
 								}
 							})();
 
-							let batch: Array<{
-								mappedRow: Record<string, unknown>;
-								originalRecord: Record<string, unknown>;
-							}> = [];
+							let batch: ImportBatchRow[] = [];
 
 							const flushBatch = async () => {
 								if (batch.length === 0) {
@@ -238,14 +255,12 @@ export const Route = createFileRoute("/api/import")({
 													? rowError.message
 													: "Row insert failed during import.";
 
-											const rowString = csvHeaders
-												.map((header) =>
-													toCsvCell(rowEntry.originalRecord[header]),
-												)
-												.join(",");
-
 											rejectWriter.write(
-												`${rowString},${toCsvCell(errorMessage)}\n`,
+												buildRejectRowLine(
+													csvHeaders,
+													rowEntry.originalRecord,
+													errorMessage,
+												),
 											);
 
 											console.error(
@@ -259,19 +274,16 @@ export const Route = createFileRoute("/api/import")({
 									}
 								}
 
-								sendEvent({ successfulRows, failedRows, status: "processing" });
+								sendImportEvent(controller, encoder, {
+									successfulRows,
+									failedRows,
+									status: "processing",
+								});
 							};
 
 							for await (const record of parser) {
-								const mappedRow: Record<string, unknown> = {};
-
-								for (const [csvHeader, dbColumn] of Object.entries(mapping)) {
-									if (!dbColumn) {
-										continue;
-									}
-
-									mappedRow[dbColumn] = record[csvHeader];
-								}
+								const originalRecord = record as Record<string, unknown>;
+								const mappedRow = mapRecordToRow(originalRecord, mapping);
 
 								if (Object.keys(mappedRow).length === 0) {
 									continue;
@@ -279,7 +291,7 @@ export const Route = createFileRoute("/api/import")({
 
 								batch.push({
 									mappedRow,
-									originalRecord: record as Record<string, unknown>,
+									originalRecord,
 								});
 
 								if (batch.length >= IMPORT_BATCH_SIZE) {
@@ -290,14 +302,14 @@ export const Route = createFileRoute("/api/import")({
 							await flushBatch();
 							await pumpStreamToParser;
 
-							sendEvent({
+							sendImportEvent(controller, encoder, {
 								successfulRows,
 								failedRows,
 								status: "completed",
 								rejectFileName: failedRows > 0 ? rejectFileName : undefined,
 							});
 						} catch (error) {
-							sendEvent({
+							sendImportEvent(controller, encoder, {
 								successfulRows,
 								failedRows,
 								status: "failed",

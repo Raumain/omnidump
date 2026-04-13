@@ -1,4 +1,18 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const hadBunGlobal = "Bun" in globalThis;
+
+beforeAll(() => {
+	if (!hadBunGlobal) {
+		vi.stubGlobal("Bun", {});
+	}
+});
+
+afterAll(() => {
+	if (!hadBunGlobal) {
+		vi.unstubAllGlobals();
+	}
+});
 
 describe("OmniDump Sanity Check", () => {
   it("should pass this basic math test to verify the bun test runner", () => {

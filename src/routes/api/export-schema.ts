@@ -1,31 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { savedConnectionToDbCredentials } from "../../lib/credentials";
 import type { DbCredentials } from "../../lib/db/connection";
 import { extractErrorMessage } from "../../lib/errors";
-import type { SavedConnection } from "../../server/connection-fns";
 
 type ExportFormat = "json" | "dbml" | "sql";
 
 const isExportFormat = (value: string | null): value is ExportFormat =>
 	value === "json" || value === "dbml" || value === "sql";
-
-const toDbCredentials = (connection: SavedConnection): DbCredentials => {
-	const normalizedDriver: DbCredentials["driver"] =
-		connection.driver === "mysql" ||
-		connection.driver === "sqlite" ||
-		connection.driver === "postgres"
-			? connection.driver
-			: "postgres";
-
-	return {
-		driver: normalizedDriver,
-		host: connection.host ?? undefined,
-		port: connection.port ?? undefined,
-		user: connection.user ?? undefined,
-		password: connection.password ?? undefined,
-		database: connection.database_name ?? undefined,
-	};
-};
 
 const requireValue = (
 	value: string | number | undefined,
@@ -117,7 +99,7 @@ export const Route = createFileRoute("/api/export-schema" as never)({
 
 				// For SQL format, use native database tools
 				if (formatParam === "sql") {
-					const credentials = toDbCredentials(connection);
+					const credentials = savedConnectionToDbCredentials(connection);
 					const commandArgs = buildSchemaDumpCommand(credentials);
 
 					const proc = Bun.spawn(commandArgs, {
@@ -145,7 +127,9 @@ export const Route = createFileRoute("/api/export-schema" as never)({
 					});
 				}
 
-				const db = getKyselyInstance(toDbCredentials(connection));
+				const db = getKyselyInstance(
+					savedConnectionToDbCredentials(connection),
+				);
 
 				try {
 					const tables = await db.introspection.getTables();

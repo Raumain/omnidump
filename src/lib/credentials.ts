@@ -87,3 +87,23 @@ export function savedConnectionToCredentials(
 ): DbCredentials {
 	return normalizeCredentials(connection);
 }
+
+/**
+ * Converts a SavedConnection to direct DbCredentials (without SSH fields).
+ * Preserves legacy API route behavior while centralizing mapping logic.
+ */
+export function savedConnectionToDbCredentials(
+	connection: SavedConnection,
+): DbCredentials {
+	const { driver, host, port, user, password, database } =
+		savedConnectionToCredentials(connection);
+
+	return {
+		driver,
+		host,
+		port,
+		user,
+		password,
+		database,
+	};
+}

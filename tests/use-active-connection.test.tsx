@@ -1,44 +1,72 @@
-import { renderHook, act } from '@testing-library/react'
-import { expect, test, describe, beforeEach, afterEach } from 'bun:test'
-import { ActiveConnectionProvider, useActiveConnection } from '../src/hooks/use-active-connection'
-import React from 'react'
+// @vitest-environment jsdom
+import { act, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+	ActiveConnectionProvider,
+	useActiveConnection,
+} from "../src/hooks/use-active-connection";
 
-const ACTIVE_CONNECTION_STORAGE_KEY = 'omnidump_active_connection'
+const ACTIVE_CONNECTION_STORAGE_KEY = "omnidump_active_connection";
 
-describe('useActiveConnection', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-  })
+describe("useActiveConnection", () => {
+	let latestState: ReturnType<typeof useActiveConnection> | null = null;
 
-  afterEach(() => {
-    window.localStorage.clear()
-  })
+	const HookProbe = () => {
+		latestState = useActiveConnection();
+		return null;
+	};
 
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <ActiveConnectionProvider>{children}</ActiveConnectionProvider>
-  )
+	const renderWithProvider = () => {
+		return render(
+			<ActiveConnectionProvider>
+				<HookProbe />
+			</ActiveConnectionProvider>,
+		);
+	};
 
-  test('should restore active connection from local storage on mount', () => {
-    const mockConnection = { id: 1, name: 'Test DB', driver: 'postgres' } 
-    window.localStorage.setItem(ACTIVE_CONNECTION_STORAGE_KEY, JSON.stringify(mockConnection))
+	beforeEach(() => {
+		latestState = null;
+		window.localStorage.clear();
+	});
 
-    const { result } = renderHook(() => useActiveConnection(), { wrapper })
+	afterEach(() => {
+		window.localStorage.clear();
+	});
 
-    expect(result.current.isHydrated).toBe(true)
-    expect(result.current.activeConnection).toEqual(mockConnection as any)
-  })
+	test("should restore active connection from local storage on mount", async () => {
+		const mockConnection = { id: 1, name: "Test DB", driver: "postgres" };
+		window.localStorage.setItem(
+			ACTIVE_CONNECTION_STORAGE_KEY,
+			JSON.stringify(mockConnection),
+		);
 
-  test('should write to local storage when active connection is set', () => {
-    const { result } = renderHook(() => useActiveConnection(), { wrapper })
+		const { unmount } = renderWithProvider();
 
-    const mockConnection = { id: 2, name: 'Test DB 2', driver: 'mysql' }
+		await waitFor(() => {
+			expect(latestState?.isHydrated).toBe(true);
+		});
 
-    act(() => {
-      result.current.setActiveConnection(mockConnection as any)
-    })
+		expect(latestState?.activeConnection).toEqual(mockConnection as any);
+		unmount();
+	});
 
-    expect(result.current.activeConnection).toEqual(mockConnection as any)
-    const stored = window.localStorage.getItem(ACTIVE_CONNECTION_STORAGE_KEY)
-    expect(stored).toBe(JSON.stringify(mockConnection))
-  })
-})
+	test("should write to local storage when active connection is set", async () => {
+		const { unmount } = renderWithProvider();
+		await waitFor(() => {
+			expect(latestState?.isHydrated).toBe(true);
+		});
+
+		const mockConnection = { id: 2, name: "Test DB 2", driver: "mysql" };
+
+		act(() => {
+			latestState?.setActiveConnection(mockConnection as any);
+		});
+
+		await waitFor(() => {
+			expect(latestState?.activeConnection).toEqual(mockConnection as any);
+		});
+		const stored = window.localStorage.getItem(ACTIVE_CONNECTION_STORAGE_KEY);
+		expect(stored).toBe(JSON.stringify(mockConnection));
+		unmount();
+	});
+});

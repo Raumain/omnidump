@@ -9,8 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VisualizationRouteImport } from './routes/visualization'
 import { Route as SchemaRouteImport } from './routes/schema'
-import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTestConnectionRouteImport } from './routes/api/test-connection'
 import { Route as ApiSeedRouteImport } from './routes/api/seed'
@@ -20,16 +20,15 @@ import { Route as ApiExportCsvRouteImport } from './routes/api/export-csv'
 import { Route as ApiDumpRouteImport } from './routes/api/dump'
 import { Route as ApiDownloadRejectRouteImport } from './routes/api/download-reject'
 import { Route as ApiDownloadDumpRouteImport } from './routes/api/download-dump'
-import { Route as ApiBatchImportRouteImport } from './routes/api/batch-import'
 
+const VisualizationRoute = VisualizationRouteImport.update({
+  id: '/visualization',
+  path: '/visualization',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SchemaRoute = SchemaRouteImport.update({
   id: '/schema',
   path: '/schema',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ImportRoute = ImportRouteImport.update({
-  id: '/import',
-  path: '/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -77,17 +76,11 @@ const ApiDownloadDumpRoute = ApiDownloadDumpRouteImport.update({
   path: '/api/download-dump',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiBatchImportRoute = ApiBatchImportRouteImport.update({
-  id: '/api/batch-import',
-  path: '/api/batch-import',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
-  '/api/batch-import': typeof ApiBatchImportRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -99,9 +92,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
-  '/api/batch-import': typeof ApiBatchImportRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -114,9 +106,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/import': typeof ImportRoute
   '/schema': typeof SchemaRoute
-  '/api/batch-import': typeof ApiBatchImportRoute
+  '/visualization': typeof VisualizationRoute
   '/api/download-dump': typeof ApiDownloadDumpRoute
   '/api/download-reject': typeof ApiDownloadRejectRoute
   '/api/dump': typeof ApiDumpRoute
@@ -130,9 +121,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/import'
     | '/schema'
-    | '/api/batch-import'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -144,9 +134,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/import'
     | '/schema'
-    | '/api/batch-import'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -158,9 +147,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/import'
     | '/schema'
-    | '/api/batch-import'
+    | '/visualization'
     | '/api/download-dump'
     | '/api/download-reject'
     | '/api/dump'
@@ -173,9 +161,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ImportRoute: typeof ImportRoute
   SchemaRoute: typeof SchemaRoute
-  ApiBatchImportRoute: typeof ApiBatchImportRoute
+  VisualizationRoute: typeof VisualizationRoute
   ApiDownloadDumpRoute: typeof ApiDownloadDumpRoute
   ApiDownloadRejectRoute: typeof ApiDownloadRejectRoute
   ApiDumpRoute: typeof ApiDumpRoute
@@ -188,18 +175,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/visualization': {
+      id: '/visualization'
+      path: '/visualization'
+      fullPath: '/visualization'
+      preLoaderRoute: typeof VisualizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schema': {
       id: '/schema'
       path: '/schema'
       fullPath: '/schema'
       preLoaderRoute: typeof SchemaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/import': {
-      id: '/import'
-      path: '/import'
-      fullPath: '/import'
-      preLoaderRoute: typeof ImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -265,21 +252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDownloadDumpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/batch-import': {
-      id: '/api/batch-import'
-      path: '/api/batch-import'
-      fullPath: '/api/batch-import'
-      preLoaderRoute: typeof ApiBatchImportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ImportRoute: ImportRoute,
   SchemaRoute: SchemaRoute,
-  ApiBatchImportRoute: ApiBatchImportRoute,
+  VisualizationRoute: VisualizationRoute,
   ApiDownloadDumpRoute: ApiDownloadDumpRoute,
   ApiDownloadRejectRoute: ApiDownloadRejectRoute,
   ApiDumpRoute: ApiDumpRoute,
