@@ -8,5 +8,10 @@
     "task": "Task 1 - Audit ActiveConnectionProvider & Implement SSH Ping API",
     "status": "✅",
     "details": "Moved localStorage sync logic into setActiveConnection callback to fix hydration race conditions erasing credentials. Replaced previous testDatabaseConnection TanStack start fn with a proper /api/test-connection Rest endpoint wrapped in withTunnel. Verified with new unittests using JSDOM."
+  },
+  {
+    "task": "Task 2 - Harden Native SSH Tunnel Lifecycle",
+    "status": "✅",
+    "details": "Reinforced src/server/ssh-tunnel.ts by replacing fixed startup sleep with active local-port readiness probing, explicit ssh credential validation, stronger OpenSSH keepalive options, and deterministic process/temp-file cleanup in finally blocks. Added bun tests for tunnel success path, premature ssh exit handling, and cleanup on action failures."
   }
 ]

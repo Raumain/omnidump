@@ -1,0 +1,5 @@
+customer_email,prenom,nom,street,ville,postal,pays,order_ref,total_paid,date_achat,pay_status,item_name,item_sku,brand,category,price,qty,warehouse,tracking,carrier
+alice@techcorp.com,Alice,Smith,123 Silicon Blvd,Paris,75001,France,CMD-001,1330.00,2026-04-08 10:00:00,completed,MacBook Pro M3,LAP-MBP-M3,Apple,Electronics,1250.00,1,WH-IDF-01,TRK987654321,FedEx
+alice@techcorp.com,Alice,Smith,123 Silicon Blvd,Paris,75001,France,CMD-001,1330.00,2026-04-08 10:00:00,completed,Magic Mouse,ACC-MM-02,Apple,Accessories,80.00,1,WH-IDF-01,TRK987654321,FedEx
+bob.jones@email.com,,,45 Rue de la Paix,Lyon,69001,France,CMD-002,120.00,2026-04-09 14:30:00,pending,Running Shoes X,SHOE-RUN-X,Nike,Footwear,120.00,1,WH-RHA-02,,
+charlie@guest.com,Charlie,Brown,99 Unknown Road,Marseille,13001,France,CMD-003,46.50,2026-04-09 16:45:00,failed,USB-C Cable,CBL-USBC-1M,Generic,Cables,15.50,3,WH-IDF-01,,

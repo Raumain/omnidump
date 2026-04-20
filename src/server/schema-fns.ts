@@ -226,6 +226,37 @@ const loadSchemaTablesWithConnection = async (
 	}
 };
 
+/**
+ * Determines if a table is a system/protected table that should not be dropped or wiped
+ */
+function isSystemTable(
+	tableName: string,
+	driver: DbCredentials["driver"],
+): boolean {
+	// Postgres system schemas/tables
+	if (driver === "postgres") {
+		return (
+			tableName.startsWith("pg_") ||
+			tableName.startsWith("information_schema.") ||
+			tableName.includes(".") // Qualified names like schema.table
+		);
+	}
+
+	// MySQL system databases/tables
+	if (driver === "mysql") {
+		return (
+			tableName.startsWith("mysql") ||
+			tableName.startsWith("information_schema") ||
+			tableName.startsWith("performance_schema") ||
+			tableName.startsWith("sys")
+		);
+	}
+
+	// SQLite: sqlite_sequence is already handled elsewhere
+	// No additional system tables to protect
+	return false;
+}
+
 const getWipeTableNames = (
 	tables: IntrospectedTable[],
 	driver: DbCredentials["driver"],
@@ -233,7 +264,9 @@ const getWipeTableNames = (
 	return tables
 		.map((table) => table.name)
 		.filter(
-			(tableName) => driver !== "sqlite" || tableName !== "sqlite_sequence",
+			(tableName) =>
+				!(driver === "sqlite" && tableName === "sqlite_sequence") &&
+				!isSystemTable(tableName, driver),
 		);
 };
 
@@ -256,13 +289,26 @@ const dropTable = async (
 	driver: DbCredentials["driver"],
 	tableName: string,
 ): Promise<void> => {
-	if (driver === "postgres") {
-		await sql.raw(`DROP TABLE "${tableName}" CASCADE`).execute(db);
-		return;
+	// Safety check: should never reach here, but defense in depth
+	if (isSystemTable(tableName, driver)) {
+		throw new Error(
+			`Cannot drop system table "${tableName}". System tables are protected.`,
+		);
 	}
 
-	const quote = driver === "mysql" ? "`" : '"';
-	await sql.raw(`DROP TABLE ${quote}${tableName}${quote}`).execute(db);
+	try {
+		if (driver === "postgres") {
+			await sql.raw(`DROP TABLE "${tableName}" CASCADE`).execute(db);
+			return;
+		}
+
+		const quote = driver === "mysql" ? "`" : '"';
+		await sql.raw(`DROP TABLE ${quote}${tableName}${quote}`).execute(db);
+	} catch (error) {
+		throw new Error(
+			`Failed to drop table "${tableName}": ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 };
 
 export const getAvailableDumpsFn = createServerFn({ method: "GET" }).handler(
@@ -422,13 +468,22 @@ export const dropAllTablesFn = createServerFn({ method: "POST" })
 			}
 
 			const { driver } = credentials;
+			const tableNames = getWipeTableNames(tables, driver);
+
+			if (tableNames.length === 0) {
+				return {
+					success: true,
+					message: "No user tables to drop.",
+				};
+			}
+
 			if (driver !== "postgres") {
 				await disableForeignKeyChecks(db, driver);
 				fkChecksDisabled = true;
 			}
 
-			for (const table of tables) {
-				await dropTable(db, driver, table.name);
+			for (const tableName of tableNames) {
+				await dropTable(db, driver, tableName);
 			}
 
 			return {
