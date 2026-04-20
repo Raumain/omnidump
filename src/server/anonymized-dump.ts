@@ -6,6 +6,7 @@ import type { DbCredentials } from "../lib/db/connection";
 import { getKyselyInstance } from "../lib/db/connection";
 import { createAnonymizer } from "./anonymizer";
 import {
+	canSetReplicationRole,
 	getFKDisableStatement,
 	getFKEnableStatement,
 } from "./db-helpers/foreign-keys";
@@ -81,7 +82,108 @@ async function generateCreateTable(
 }
 
 /**
+ * Batches an array into chunks of specified size
+ */
+function batchArray<T>(array: T[], batchSize: number): T[][] {
+	const batches: T[][] = [];
+	for (let i = 0; i < array.length; i += batchSize) {
+		batches.push(array.slice(i, i + batchSize));
+	}
+	return batches;
+}
+
+/**
+ * Generates COPY format data for Postgres (most efficient bulk loading)
+ */
+function generateCopyFormat(
+	tableName: string,
+	columns: string[],
+	anonymizedRows: Record<string, unknown>[],
+	driver: DbCredentials["driver"],
+): string {
+	const lines: string[] = [];
+	const quotedTable = quoteIdentifier(tableName, driver);
+	const quotedColumns = columns
+		.map((c) => quoteIdentifier(c, driver))
+		.join(", ");
+
+	lines.push(`COPY ${quotedTable} (${quotedColumns}) FROM stdin;`);
+
+	// COPY format uses tab-separated values with special character escaping
+	for (const row of anonymizedRows) {
+		const values = columns
+			.map((col) => {
+				const value = row[col];
+				// In COPY format, NULL is represented as \N
+				if (value === null || value === undefined) {
+					return "\\N";
+				}
+
+				let stringValue: string;
+				if (value instanceof Date) {
+					stringValue = value.toISOString();
+				} else if (typeof value === "object") {
+					stringValue = JSON.stringify(value);
+				} else {
+					stringValue = String(value);
+				}
+
+				// Escape special characters in COPY format
+				return stringValue
+					.replace(/\\/g, "\\\\") // Escape backslashes first
+					.replace(/\t/g, "\\t") // Escape tabs
+					.replace(/\n/g, "\\n") // Escape newlines
+					.replace(/\r/g, "\\r"); // Escape carriage returns
+			})
+			.join("\t");
+
+		lines.push(values);
+	}
+
+	lines.push("\\.");
+
+	return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Generates batched INSERT statements for MySQL and SQLite
+ */
+function generateBatchedInserts(
+	tableName: string,
+	columns: string[],
+	anonymizedRows: Record<string, unknown>[],
+	driver: DbCredentials["driver"],
+	batchSize: number = 1000,
+): string {
+	const lines: string[] = [];
+	const quotedTable = quoteIdentifier(tableName, driver);
+	const quotedColumns = columns
+		.map((c) => quoteIdentifier(c, driver))
+		.join(", ");
+
+	const batches = batchArray(anonymizedRows, batchSize);
+
+	for (const batch of batches) {
+		const valueSets = batch
+			.map((row) => {
+				const values = columns
+					.map((col) => escapeValue(row[col], driver))
+					.join(", ");
+				return `(${values})`;
+			})
+			.join(", ");
+
+		lines.push(`INSERT INTO ${quotedTable} (${quotedColumns}) VALUES ${valueSets};`);
+	}
+
+	return `${lines.join("\n")}\n`;
+}
+
+/**
  * Generate INSERT statements for a table with anonymized data
+ * Uses database-specific bulk loading for optimal performance:
+ * - Postgres: COPY format (100-1000x faster than row INSERT)
+ * - MySQL/SQLite: Batched multi-row INSERT (10-50x faster than row INSERT)
  */
 async function generateInserts(
 	tableName: string,
@@ -103,26 +205,18 @@ async function generateInserts(
 		return "";
 	}
 
-	const lines: string[] = [];
-	const quotedColumns = columns
-		.map((c) => quoteIdentifier(c, driver))
-		.join(", ");
+	// Anonymize all rows upfront
+	const anonymizedRows = (result.rows as Record<string, unknown>[]).map((row) =>
+		anonymizer.anonymizeRow(row, tableName, tableRules),
+	);
 
-	for (const row of result.rows as Record<string, unknown>[]) {
-		// Apply anonymization
-		const anonymizedRow = anonymizer.anonymizeRow(row, tableName, tableRules);
-
-		// Generate values
-		const values = columns
-			.map((col) => escapeValue(anonymizedRow[col], driver))
-			.join(", ");
-
-		lines.push(
-			`INSERT INTO ${quotedTable} (${quotedColumns}) VALUES (${values});`,
-		);
+	// Use database-specific bulk loading for optimal performance
+	if (driver === "postgres") {
+		return generateCopyFormat(tableName, columns, anonymizedRows, driver);
 	}
 
-	return `${lines.join("\n")}\n`;
+	// MySQL and SQLite use batched multi-row INSERT
+	return generateBatchedInserts(tableName, columns, anonymizedRows, driver, 1000);
 }
 
 /**
@@ -143,6 +237,15 @@ export async function generateAnonymizedDump(
 		const db = getKyselyInstance(tunneledCreds);
 
 		try {
+			// Check if we can use replication role for disabling FK checks
+			let canUseReplicationRole = true;
+			if (credentials.driver === "postgres") {
+				canUseReplicationRole = await canSetReplicationRole(
+					db,
+					credentials.driver,
+				);
+			}
+
 			// Get all tables
 			const allTables = await db.introspection.getTables();
 			const tableSchemas: TableSchema[] = allTables
@@ -166,8 +269,14 @@ export async function generateAnonymizedDump(
 			lines.push("");
 
 			// Disable foreign key checks for import
-			lines.push(getFKDisableStatement(credentials.driver));
-			lines.push("");
+			const disableStatement = getFKDisableStatement(
+				credentials.driver,
+				canUseReplicationRole,
+			);
+			if (disableStatement) {
+				lines.push(disableStatement);
+				lines.push("");
+			}
 
 			// Generate schema if requested
 			if (includeSchema) {
@@ -209,7 +318,13 @@ export async function generateAnonymizedDump(
 			}
 
 			// Re-enable foreign key checks
-			lines.push(getFKEnableStatement(credentials.driver));
+			const enableStatement = getFKEnableStatement(
+				credentials.driver,
+				canUseReplicationRole,
+			);
+			if (enableStatement) {
+				lines.push(enableStatement);
+			}
 
 			return lines.join("\n");
 		} finally {
