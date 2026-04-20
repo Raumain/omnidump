@@ -1,0 +1,2 @@
+"_raw_row","_error_reason"
+"{""email_client"":""jean.dupont@email.com"",""prenom"":""Jean"",""nom"":""Dupont"",""adresse_livraison"":""10 Rue de la Paix"",""ville_livraison"":""Paris"",""code_postal"":""75000"",""pays"":""France"",""montant_commande"":""150.50"",""statut_commande"":""completed"",""sku_produit"":""SKU-JEAN-32"",""nom_produit"":""Jean Slim Bleu"",""quantite"":""1"",""prix_unitaire"":""100.50"",""numero_suivi"":""TRK987654321"",""transporteur"":""Colissimo""}","duplicate key value violates unique constraint \"carriers_name_key\""

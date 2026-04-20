@@ -8,6 +8,8 @@ OmniDump is a lightning-fast, self-hosted database management and ETL (Extract, 
 * **🔒 Native SSH Tunneling:** Securely connect to remote, firewalled databases through built-in SSH tunneling without opening public ports.
 * **⚡ Blazing Fast SSR:** Powered by Bun and a highly optimized React Server-Side Rendered frontend for instant interactions.
 * **🗄️ Self-Hosted & Private:** Your database credentials and dumps never leave your infrastructure.
+* **📤 Flexible CSV Exports:** Export a single table as CSV or export the full database as a ZIP that contains one CSV per table.
+* **📈 Data Visualization (Table Explorer):** Browse real table rows with server-side sorting, filtering, and pagination.
 
 ---
 
@@ -40,6 +42,18 @@ Then, start the application:
 docker compose up -d
 ```
 Access the dashboard at `http://localhost:5555`.
+
+---
+
+## 📈 Data Visualization (Large-Data Safe)
+
+OmniDump includes a **Visualization** page built for high-volume databases:
+
+* Displays the **actual stored table rows** with their real columns.
+* Uses **server-side filtering and sorting** (query logic runs on the server, not in the browser).
+* Uses **server-side pagination** with strict page-size limits to keep large tables responsive.
+
+This keeps browser memory and rendering stable even when underlying tables are very large.
 
 ---
 

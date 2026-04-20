@@ -46,12 +46,52 @@ export async function restoreForeignKeyChecks(
 }
 
 /**
- * Generates SQL statements to disable FK checks (for dump files).
+ * Safely checks if the current database session can set session_replication_role.
+ * Returns true if the setting succeeds, false if permission is denied.
+ * This is Postgres-specific; other databases return true by default (not applicable).
  */
-export function getFKDisableStatement(driver: DbDriver): string {
+export async function canSetReplicationRole(
+	// biome-ignore lint/suspicious/noExplicitAny: Kysely generic
+	db: Kysely<any>,
+	driver: DbDriver,
+): Promise<boolean> {
+	// Only relevant for Postgres
+	if (driver !== "postgres") {
+		return true;
+	}
+
+	try {
+		// Try to set the replication role in a controlled manner
+		await sql`SET session_replication_role = 'replica';`.execute(db);
+		// If successful, restore to original
+		await sql`SET session_replication_role = 'origin';`.execute(db);
+		return true;
+	} catch (error) {
+		// If we get a privilege error, return false
+		// Log at debug level but don't throw
+		if (error instanceof Error) {
+			console.debug(
+				`Cannot set session_replication_role (permission denied). Dumps will include FK constraints. Error: ${error.message}`,
+			);
+		}
+		return false;
+	}
+}
+
+/**
+ * Generates SQL statements to disable FK checks (for dump files).
+ * @param driver Database driver type
+ * @param allowReplicationRole If false, Postgres will skip replication role setting (for unprivileged users)
+ */
+export function getFKDisableStatement(
+	driver: DbDriver,
+	allowReplicationRole: boolean = true,
+): string {
 	switch (driver) {
 		case "postgres":
-			return "SET session_replication_role = 'replica';";
+			return allowReplicationRole
+				? "SET session_replication_role = 'replica';"
+				: ""; // No FK disabling for unprivileged users
 		case "mysql":
 			return "SET FOREIGN_KEY_CHECKS = 0;";
 		case "sqlite":
@@ -61,11 +101,18 @@ export function getFKDisableStatement(driver: DbDriver): string {
 
 /**
  * Generates SQL statements to re-enable FK checks (for dump files).
+ * @param driver Database driver type
+ * @param allowReplicationRole If false, Postgres will skip replication role setting
  */
-export function getFKEnableStatement(driver: DbDriver): string {
+export function getFKEnableStatement(
+	driver: DbDriver,
+	allowReplicationRole: boolean = true,
+): string {
 	switch (driver) {
 		case "postgres":
-			return "SET session_replication_role = 'origin';";
+			return allowReplicationRole
+				? "SET session_replication_role = 'origin';"
+				: ""; // No FK re-enabling for unprivileged users
 		case "mysql":
 			return "SET FOREIGN_KEY_CHECKS = 1;";
 		case "sqlite":
