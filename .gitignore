@@ -13,6 +13,8 @@ dist-ssr
 __unconfig*
 todos.json
 
+exports/*
+
 omnidump.db 
 omnidump.db-shm 
 omnidump.db-wal
