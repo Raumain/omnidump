@@ -173,7 +173,9 @@ function generateBatchedInserts(
 			})
 			.join(", ");
 
-		lines.push(`INSERT INTO ${quotedTable} (${quotedColumns}) VALUES ${valueSets};`);
+		lines.push(
+			`INSERT INTO ${quotedTable} (${quotedColumns}) VALUES ${valueSets};`,
+		);
 	}
 
 	return `${lines.join("\n")}\n`;
@@ -216,7 +218,13 @@ async function generateInserts(
 	}
 
 	// MySQL and SQLite use batched multi-row INSERT
-	return generateBatchedInserts(tableName, columns, anonymizedRows, driver, 1000);
+	return generateBatchedInserts(
+		tableName,
+		columns,
+		anonymizedRows,
+		driver,
+		1000,
+	);
 }
 
 /**
