@@ -3,17 +3,29 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
+	type ColumnPinningState,
+	type ColumnSizingInfoState,
+	type ColumnSizingState,
 	flexRender,
 	getCoreRowModel,
 	type SortingState,
 	useReactTable,
+	type VisibilityState,
 } from "@tanstack/react-table";
 import { Database, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Loader from "#/components/Loader";
 import { NoConnectionState } from "#/components/NoConnectionState";
 import { Button } from "#/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuCheckboxItem,
+	DropdownMenuContent,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import {
@@ -29,7 +41,13 @@ import {
 	visualizationTableDataQueryKey,
 } from "#/lib/query-keys";
 import { VISUALIZATION_LIMITS } from "#/lib/visualization";
+import {
+	buildDefaultColumnSizing,
+	clampVisualizationColumnWidth,
+	getPreferredColumnWidth,
+} from "#/routes/_visualization/column-layout";
 import { useVisualizationInlineRowState } from "#/routes/_visualization/inline-row-state";
+import { getVisualizationPinnedStyle } from "#/routes/_visualization/pinning-style";
 import {
 	normalizeFilters,
 	parseFiltersFromSearch,
@@ -39,6 +57,12 @@ import {
 	type VisualizationSearch,
 	validateVisualizationSearch,
 } from "#/routes/_visualization/search-state";
+import {
+	createVisualizationPreferencesStorageKey,
+	loadVisualizationTablePreferences,
+	saveVisualizationTablePreferences,
+	type VisualizationTableDensity,
+} from "#/routes/_visualization/table-preferences";
 import {
 	formatCellValue,
 	getStableRowKey,
@@ -74,6 +98,15 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 	return debouncedValue;
 }
 
+const getDefaultColumnPinning = (
+	primaryKeyColumns: string[],
+): ColumnPinningState => ({
+	left: primaryKeyColumns,
+	right: ["__actions"],
+});
+
+const toCellText = (value: unknown): string => formatCellValue(value);
+
 function VisualizationPage() {
 	const search = Route.useSearch();
 	const navigate = useNavigate({ from: "/visualization" });
@@ -89,6 +122,25 @@ function VisualizationPage() {
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(() =>
 		parseFiltersFromSearch(search.f),
 	);
+	const [density, setDensity] =
+		useState<VisualizationTableDensity>("comfortable");
+	const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+	const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({
+		left: [],
+		right: ["__actions"],
+	});
+	const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+	const [columnSizingInfo, setColumnSizingInfo] =
+		useState<ColumnSizingInfoState>({
+			startOffset: null,
+			startSize: null,
+			deltaOffset: null,
+			deltaPercentage: null,
+			isResizingColumn: false,
+			columnSizingStart: [],
+		});
+	const loadedPreferencesSignatureRef = useRef<string | null>(null);
 	const {
 		isCreatingRow,
 		newRowValues,
@@ -361,6 +413,13 @@ function VisualizationPage() {
 		retry: 1,
 	});
 	const activeColumns = tableDataQuery.data?.columns ?? [];
+	const primaryKeyColumnNames = useMemo(
+		() =>
+			activeColumns
+				.filter((column) => column.isPrimaryKey)
+				.map((column) => column.name),
+		[activeColumns],
+	);
 	const createEditableColumns = useMemo(
 		() => activeColumns.filter((column) => !column.isAutoIncrementing),
 		[activeColumns],
@@ -383,6 +442,108 @@ function VisualizationPage() {
 		() => new Set(updateEditableColumns.map((column) => column.name)),
 		[updateEditableColumns],
 	);
+	const defaultColumnSizing = useMemo(
+		() =>
+			buildDefaultColumnSizing(
+				activeColumns.map((column) => ({
+					name: column.name,
+					dataType: column.dataType,
+					kind: column.kind,
+				})),
+			),
+		[activeColumns],
+	);
+	const preferenceKey = useMemo(() => {
+		if (!activeConnection?.id || !selectedTableName) {
+			return null;
+		}
+
+		return createVisualizationPreferencesStorageKey({
+			connectionId: String(activeConnection.id),
+			tableName: selectedTableName,
+		});
+	}, [activeConnection?.id, selectedTableName]);
+	const columnsSignature = useMemo(
+		() => activeColumns.map((column) => column.name).join("|"),
+		[activeColumns],
+	);
+
+	useEffect(() => {
+		if (!preferenceKey || columnsSignature.length === 0) {
+			return;
+		}
+
+		const nextSignature = `${preferenceKey}|${columnsSignature}`;
+		if (loadedPreferencesSignatureRef.current === nextSignature) {
+			return;
+		}
+
+		loadedPreferencesSignatureRef.current = nextSignature;
+		const loaded = loadVisualizationTablePreferences({
+			storage: window.localStorage,
+			key: preferenceKey,
+			columnNames: activeColumns.map((column) => column.name),
+		});
+		const fallbackPinning = getDefaultColumnPinning(primaryKeyColumnNames);
+		setDensity(loaded.density);
+		setIsControlsCollapsed(loaded.isControlsCollapsed);
+		setColumnVisibility(loaded.columnVisibility);
+		setColumnPinning({
+			left:
+				loaded.columnPinning.left.length > 0
+					? loaded.columnPinning.left
+					: fallbackPinning.left,
+			right:
+				loaded.columnPinning.right.length > 0
+					? loaded.columnPinning.right
+					: fallbackPinning.right,
+		});
+		setColumnSizing({
+			...defaultColumnSizing,
+			...Object.fromEntries(
+				Object.entries(loaded.columnSizing).map(([key, value]) => [
+					key,
+					clampVisualizationColumnWidth(value),
+				]),
+			),
+		});
+	}, [
+		preferenceKey,
+		columnsSignature,
+		activeColumns,
+		primaryKeyColumnNames,
+		defaultColumnSizing,
+	]);
+
+	useEffect(() => {
+		if (!preferenceKey || columnsSignature.length === 0) {
+			return;
+		}
+
+		saveVisualizationTablePreferences({
+			storage: window.localStorage,
+			key: preferenceKey,
+			preferences: {
+				density,
+				isControlsCollapsed,
+				isFocusMode: false,
+				columnSizing,
+				columnVisibility,
+				columnPinning: {
+					left: columnPinning.left ?? [],
+					right: columnPinning.right ?? [],
+				},
+			},
+		});
+	}, [
+		preferenceKey,
+		columnsSignature,
+		density,
+		isControlsCollapsed,
+		columnSizing,
+		columnVisibility,
+		columnPinning,
+	]);
 
 	const handleOpenCreateRow = useCallback(() => {
 		openCreateRow(createEditableColumns);
@@ -432,6 +593,13 @@ function VisualizationPage() {
 		const dataColumns = (tableDataQuery.data?.columns ?? []).map((column) => ({
 			id: column.name,
 			accessorFn: (row: TableRow) => row[column.name],
+			size: getPreferredColumnWidth({
+				name: column.name,
+				dataType: column.dataType,
+				kind: column.kind,
+			}),
+			minSize: 80,
+			maxSize: 560,
 			header: () => {
 				const currentSort = sorting.find((sort) => sort.id === column.name);
 				const sortIndicator = currentSort ? (currentSort.desc ? "▼" : "▲") : "";
@@ -467,6 +635,9 @@ function VisualizationPage() {
 
 		const actionColumn: ColumnDef<TableRow> = {
 			id: "__actions",
+			size: 120,
+			minSize: 110,
+			maxSize: 180,
 			header: () => (
 				<span className="text-xs font-black uppercase tracking-widest text-muted-foreground">
 					Actions
@@ -483,6 +654,10 @@ function VisualizationPage() {
 		state: {
 			sorting,
 			columnFilters,
+			columnVisibility,
+			columnPinning,
+			columnSizing,
+			columnSizingInfo,
 			pagination: {
 				pageIndex,
 				pageSize,
@@ -491,10 +666,24 @@ function VisualizationPage() {
 		getCoreRowModel: getCoreRowModel(),
 		onSortingChange: setSorting,
 		onColumnFiltersChange: setColumnFilters,
+		onColumnVisibilityChange: setColumnVisibility,
+		onColumnPinningChange: setColumnPinning,
+		onColumnSizingChange: setColumnSizing,
+		onColumnSizingInfoChange: setColumnSizingInfo,
 		manualSorting: true,
 		manualFiltering: true,
 		manualPagination: true,
+		columnResizeMode: "onChange",
+		enableColumnResizing: true,
+		enableColumnPinning: true,
 	});
+
+	const resetTableLayout = useCallback(() => {
+		setDensity("comfortable");
+		setColumnVisibility({});
+		setColumnSizing(defaultColumnSizing);
+		setColumnPinning(getDefaultColumnPinning(primaryKeyColumnNames));
+	}, [defaultColumnSizing, primaryKeyColumnNames]);
 
 	if (!isHydrated) {
 		return <Loader />;
@@ -512,8 +701,30 @@ function VisualizationPage() {
 	const pageCount = tableDataQuery.data?.pageCount ?? 0;
 	const totalRows = tableDataQuery.data?.totalRows ?? 0;
 	const tableRows = tableDataQuery.data?.rows ?? [];
-	const tableColumnCount = (tableDataQuery.data?.columns.length ?? 0) + 1;
+	const tableColumnCount = table.getVisibleLeafColumns().length;
 	const canEditRows = updateEditableColumns.length > 0;
+	const activeColumnsByName = new Map(
+		activeColumns.map((column) => [column.name, column]),
+	);
+	const controlsVisible = !isControlsCollapsed;
+	const densityCellClass =
+		density === "compact" ? "px-2 py-1 text-xs" : "px-2.5 py-2 text-sm";
+
+	const getPinnedCellStyle = (
+		column: ReturnType<typeof table.getVisibleLeafColumns>[number],
+	) => {
+		const pinned = column.getIsPinned();
+		return getVisualizationPinnedStyle({
+			pinned,
+			offset:
+				pinned === "left"
+					? column.getStart("left")
+					: pinned === "right"
+						? column.getAfter("right")
+						: 0,
+			surface: "body",
+		});
+	};
 
 	return (
 		<section className="mx-auto flex min-h-screen w-full flex-col gap-6 p-6 md:p-10 font-mono">
@@ -533,107 +744,111 @@ function VisualizationPage() {
 				</div>
 			</div>
 
-			<div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
-				<div className="bg-card border-2 border-border shadow-hardware p-5 space-y-4">
-					<div className="flex items-center justify-between border-b-2 border-border pb-3">
-						<h2 className="font-black uppercase tracking-wider text-primary">
-							Table controls
-						</h2>
-						<Button
-							type="button"
-							size="icon-sm"
-							variant="ghost"
-							onClick={() => {
-								void metadataQuery.refetch();
-								void tableDataQuery.refetch();
-							}}
-						>
-							<RefreshCw className="w-4 h-4" />
-						</Button>
-					</div>
+			<div
+				className={`grid grid-cols-1 gap-6 ${controlsVisible ? "lg:grid-cols-[320px_1fr]" : ""}`}
+			>
+				{controlsVisible ? (
+					<div className="bg-card border-2 border-border shadow-hardware p-5 space-y-4">
+						<div className="flex items-center justify-between border-b-2 border-border pb-3">
+							<h2 className="font-black uppercase tracking-wider text-primary">
+								Table controls
+							</h2>
+							<Button
+								type="button"
+								size="icon-sm"
+								variant="ghost"
+								onClick={() => {
+									void metadataQuery.refetch();
+									void tableDataQuery.refetch();
+								}}
+							>
+								<RefreshCw className="w-4 h-4" />
+							</Button>
+						</div>
 
-					<div className="space-y-2">
-						<Label>Table</Label>
-						<Select
-							value={selectedTableName || undefined}
-							onValueChange={(value) => {
-								setSelectedTableName(value);
-								setPageIndex(0);
-								setColumnFilters([]);
-								setSorting([]);
-								resetInlineStates();
-							}}
-							disabled={metadataQuery.isLoading || tables.length === 0}
-						>
-							<SelectTrigger className="w-full rounded-none border-2 border-border bg-card font-bold uppercase">
-								<SelectValue placeholder="Select table" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-2 border-border bg-card font-mono">
-								{tables.map((tableInfo) => (
-									<SelectItem
-										key={tableInfo.tableName}
-										value={tableInfo.tableName}
-										className="uppercase text-xs font-bold"
-									>
-										<div className="flex w-full items-center justify-between gap-3">
-											<span>{tableInfo.tableName}</span>
-											<span className="text-[10px] text-muted-foreground">
-												{tableInfo.rowCountEstimate ?? "?"} rows
-											</span>
-										</div>
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						<div className="space-y-2">
+							<Label>Table</Label>
+							<Select
+								value={selectedTableName || undefined}
+								onValueChange={(value) => {
+									setSelectedTableName(value);
+									setPageIndex(0);
+									setColumnFilters([]);
+									setSorting([]);
+									resetInlineStates();
+								}}
+								disabled={metadataQuery.isLoading || tables.length === 0}
+							>
+								<SelectTrigger className="w-full rounded-none border-2 border-border bg-card font-bold uppercase">
+									<SelectValue placeholder="Select table" />
+								</SelectTrigger>
+								<SelectContent className="rounded-none border-2 border-border bg-card font-mono">
+									{tables.map((tableInfo) => (
+										<SelectItem
+											key={tableInfo.tableName}
+											value={tableInfo.tableName}
+											className="uppercase text-xs font-bold"
+										>
+											<div className="flex w-full items-center justify-between gap-3">
+												<span>{tableInfo.tableName}</span>
+												<span className="text-[10px] text-muted-foreground">
+													{tableInfo.rowCountEstimate ?? "?"} rows
+												</span>
+											</div>
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					<div className="space-y-2">
-						<Label>Page size</Label>
-						<Select
-							value={String(pageSize)}
-							onValueChange={(value) => {
-								const parsed = Number(value);
-								if (!Number.isFinite(parsed)) {
-									return;
-								}
-								setPageIndex(0);
-								setPageSize(
-									Math.min(parsed, VISUALIZATION_LIMITS.maxTablePageSize),
-								);
-							}}
-						>
-							<SelectTrigger className="w-full rounded-none border-2 border-border bg-card font-bold uppercase">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-2 border-border bg-card font-mono">
-								{[25, 50, 100, 200].map((size) => (
-									<SelectItem
-										key={size}
-										value={String(size)}
-										className="uppercase text-xs font-bold"
-									>
-										{size}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						<div className="space-y-2">
+							<Label>Page size</Label>
+							<Select
+								value={String(pageSize)}
+								onValueChange={(value) => {
+									const parsed = Number(value);
+									if (!Number.isFinite(parsed)) {
+										return;
+									}
+									setPageIndex(0);
+									setPageSize(
+										Math.min(parsed, VISUALIZATION_LIMITS.maxTablePageSize),
+									);
+								}}
+							>
+								<SelectTrigger className="w-full rounded-none border-2 border-border bg-card font-bold uppercase">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent className="rounded-none border-2 border-border bg-card font-mono">
+									{[25, 50, 100, 200].map((size) => (
+										<SelectItem
+											key={size}
+											value={String(size)}
+											className="uppercase text-xs font-bold"
+										>
+											{size}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					<div className="border-2 border-border bg-secondary p-3">
-						<p className="text-xs font-bold uppercase text-muted-foreground">
-							Current table
-						</p>
-						<p className="mt-1 text-sm font-black uppercase text-primary">
-							{selectedTable?.tableName ?? "none"}
-						</p>
-						<p className="mt-2 text-xs font-bold uppercase text-muted-foreground">
-							Columns: {selectedTable?.columns.length ?? 0}
-						</p>
-						<p className="text-xs font-bold uppercase text-muted-foreground">
-							Total rows: {totalRows}
-						</p>
+						<div className="border-2 border-border bg-secondary p-3">
+							<p className="text-xs font-bold uppercase text-muted-foreground">
+								Current table
+							</p>
+							<p className="mt-1 text-sm font-black uppercase text-primary">
+								{selectedTable?.tableName ?? "none"}
+							</p>
+							<p className="mt-2 text-xs font-bold uppercase text-muted-foreground">
+								Columns: {selectedTable?.columns.length ?? 0}
+							</p>
+							<p className="text-xs font-bold uppercase text-muted-foreground">
+								Total rows: {totalRows}
+							</p>
+						</div>
 					</div>
-				</div>
+				) : null}
 
 				<div className="bg-card border-2 border-border shadow-hardware p-5 space-y-4 min-w-0">
 					<div className="flex items-center justify-between border-b-2 border-border pb-3">
@@ -688,7 +903,77 @@ function VisualizationPage() {
 							>
 								New row
 							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => setIsControlsCollapsed((previous) => !previous)}
+							>
+								{controlsVisible ? "Hide controls" : "Show controls"}
+							</Button>
 						</div>
+					</div>
+
+					<div className="flex flex-wrap items-center gap-2 border-2 border-border bg-secondary px-3 py-2">
+						<div className="text-[11px] font-bold uppercase text-muted-foreground">
+							Density
+						</div>
+						<Button
+							type="button"
+							size="xs"
+							variant={density === "comfortable" ? "accent" : "outline"}
+							onClick={() => setDensity("comfortable")}
+						>
+							Comfortable
+						</Button>
+						<Button
+							type="button"
+							size="xs"
+							variant={density === "compact" ? "accent" : "outline"}
+							onClick={() => setDensity("compact")}
+						>
+							Compact
+						</Button>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button type="button" size="xs" variant="outline">
+									Columns
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent
+								align="start"
+								className="rounded-none border-2 border-border bg-card font-mono min-w-55"
+							>
+								<DropdownMenuLabel className="uppercase text-[11px] font-bold">
+									Toggle columns
+								</DropdownMenuLabel>
+								<DropdownMenuSeparator />
+								{activeColumns.map((column) => (
+									<DropdownMenuCheckboxItem
+										key={`visible-${column.name}`}
+										checked={
+											table.getColumn(column.name)?.getIsVisible() ?? true
+										}
+										onCheckedChange={(checked) =>
+											table
+												.getColumn(column.name)
+												?.toggleVisibility(Boolean(checked))
+										}
+										className="uppercase text-[11px] font-bold"
+									>
+										{column.name}
+									</DropdownMenuCheckboxItem>
+								))}
+							</DropdownMenuContent>
+						</DropdownMenu>
+						<Button
+							type="button"
+							size="xs"
+							variant="outline"
+							onClick={resetTableLayout}
+						>
+							Reset layout
+						</Button>
 					</div>
 
 					{metadataQuery.isLoading ? (
@@ -719,43 +1004,93 @@ function VisualizationPage() {
 						</div>
 					) : null}
 					{editingError ? (
-						<div className="p-4 border-2 border-destructive bg-destructive/10 text-sm font-bold whitespace-normal break-words">
+						<div className="p-4 border-2 border-destructive bg-destructive/10 text-sm font-bold whitespace-normal wrap-break-word">
 							{editingError}
 						</div>
 					) : null}
 
-					<div className="border-2 border-border overflow-auto max-h-[calc(100vh-340px)]">
-						<table className="w-full min-w-[900px] text-sm">
+					<div className="border-2 border-border overflow-auto max-h-[calc(100vh-320px)]">
+						<table
+							className="min-w-full text-sm border-separate border-spacing-0"
+							style={{ width: table.getTotalSize() }}
+						>
 							<thead className="bg-secondary">
 								{table.getHeaderGroups().map((headerGroup) => (
 									<tr key={headerGroup.id} className="border-b-2 border-border">
 										{headerGroup.headers.map((header) => (
 											<th
 												key={header.id}
-												className="p-2 align-top text-left border-r border-border last:border-r-0"
+												className={`align-top text-left border-r border-border last:border-r-0 sticky top-0 ${densityCellClass} bg-secondary`}
+												style={{
+													...getVisualizationPinnedStyle({
+														pinned: header.column.getIsPinned(),
+														offset:
+															header.column.getIsPinned() === "left"
+																? header.column.getStart("left")
+																: header.column.getIsPinned() === "right"
+																	? header.column.getAfter("right")
+																	: 0,
+														surface: "header",
+													}),
+													width: header.getSize(),
+													minWidth: header.column.columnDef.minSize,
+													maxWidth: header.column.columnDef.maxSize,
+												}}
 											>
-												{header.isPlaceholder
-													? null
-													: flexRender(
-															header.column.columnDef.header,
-															header.getContext(),
-														)}
+												<div className="relative">
+													{header.isPlaceholder
+														? null
+														: flexRender(
+																header.column.columnDef.header,
+																header.getContext(),
+															)}
+													{header.column.getCanResize() ? (
+														<button
+															type="button"
+															aria-label={`Resize ${header.column.id} column`}
+															onMouseDown={header.getResizeHandler()}
+															onTouchStart={header.getResizeHandler()}
+															className={`absolute right-0 top-0 h-full w-1 cursor-col-resize touch-none bg-border/40 transition-colors hover:bg-primary ${
+																header.column.getIsResizing()
+																	? "bg-primary"
+																	: ""
+															}`}
+														/>
+													) : null}
+												</div>
 											</th>
 										))}
 									</tr>
 								))}
 								{tableDataQuery.data ? (
 									<tr className="border-b border-border">
-										{tableDataQuery.data.columns.map((column) => {
+										{table.getVisibleLeafColumns().map((visibleColumn) => {
+											if (visibleColumn.id === "__actions") {
+												return (
+													<th
+														key="filter-__actions"
+														className={`border-r border-border last:border-r-0 bg-card ${densityCellClass}`}
+														style={{
+															...getPinnedCellStyle(visibleColumn),
+															width: visibleColumn.getSize(),
+														}}
+													/>
+												);
+											}
+
 											const currentFilter =
 												(columnFilters.find(
-													(filter) => filter.id === column.name,
+													(filter) => filter.id === visibleColumn.id,
 												)?.value as string | undefined) ?? "";
 
 											return (
 												<th
-													key={`filter-${column.name}`}
-													className="p-2 border-r border-border last:border-r-0 bg-card"
+													key={`filter-${visibleColumn.id}`}
+													className={`border-r border-border last:border-r-0 bg-card ${densityCellClass}`}
+													style={{
+														...getPinnedCellStyle(visibleColumn),
+														width: visibleColumn.getSize(),
+													}}
 												>
 													<Input
 														type="text"
@@ -765,7 +1100,7 @@ function VisualizationPage() {
 															setPageIndex(0);
 															setColumnFilters((previous) => {
 																const withoutCurrent = previous.filter(
-																	(filter) => filter.id !== column.name,
+																	(filter) => filter.id !== visibleColumn.id,
 																);
 
 																if (nextValue.trim() === "") {
@@ -775,26 +1110,73 @@ function VisualizationPage() {
 																return [
 																	...withoutCurrent,
 																	{
-																		id: column.name,
+																		id: visibleColumn.id,
 																		value: nextValue,
 																	},
 																];
 															});
 														}}
-														className="h-8 rounded-none border border-border bg-secondary text-xs font-bold"
+														className={`rounded-none border border-border bg-secondary text-xs font-bold ${
+															density === "compact" ? "h-7" : "h-8"
+														}`}
 														placeholder="Filter..."
 													/>
 												</th>
 											);
 										})}
-										<th className="p-2 border-r border-border last:border-r-0 bg-card" />
 									</tr>
 								) : null}
 							</thead>
 							<tbody>
 								{isCreatingRow && tableDataQuery.data ? (
 									<tr className="border-b-2 border-primary bg-primary/5">
-										{tableDataQuery.data.columns.map((column) => {
+										{table.getVisibleLeafColumns().map((visibleColumn) => {
+											if (visibleColumn.id === "__actions") {
+												return (
+													<td
+														key="create-actions"
+														className={`border-r border-border last:border-r-0 align-top ${densityCellClass}`}
+														style={{
+															...getPinnedCellStyle(visibleColumn),
+															width: visibleColumn.getSize(),
+														}}
+													>
+														<div className="flex flex-col gap-1">
+															<div className="flex items-center gap-1">
+																<Button
+																	type="button"
+																	size="xs"
+																	variant="accent"
+																	disabled={isMutatingRow}
+																	onClick={submitCreateRow}
+																>
+																	{isMutatingRow ? "Saving..." : "Save"}
+																</Button>
+																<Button
+																	type="button"
+																	size="xs"
+																	variant="outline"
+																	disabled={isMutatingRow}
+																	onClick={cancelCreateRow}
+																>
+																	Cancel
+																</Button>
+															</div>
+															{newRowError ? (
+																<p className="text-[11px] font-bold text-destructive">
+																	{newRowError}
+																</p>
+															) : null}
+														</div>
+													</td>
+												);
+											}
+
+											const column = activeColumnsByName.get(visibleColumn.id);
+											if (!column) {
+												return null;
+											}
+
 											const isEditableColumn = createEditableColumnNames.has(
 												column.name,
 											);
@@ -802,7 +1184,11 @@ function VisualizationPage() {
 											return (
 												<td
 													key={`create-${column.name}`}
-													className="p-2 border-r border-border last:border-r-0 align-top"
+													className={`border-r border-border last:border-r-0 align-top ${densityCellClass}`}
+													style={{
+														...getPinnedCellStyle(visibleColumn),
+														width: visibleColumn.getSize(),
+													}}
 												>
 													{isEditableColumn ? (
 														<div className="space-y-1">
@@ -815,7 +1201,9 @@ function VisualizationPage() {
 																		event.target.value,
 																	)
 																}
-																className="h-8 rounded-none border border-border bg-card text-xs font-bold"
+																className={`rounded-none border border-border bg-card text-xs font-bold ${
+																	density === "compact" ? "h-7" : "h-8"
+																}`}
 																placeholder={column.dataType}
 																disabled={isMutatingRow}
 															/>
@@ -833,35 +1221,6 @@ function VisualizationPage() {
 												</td>
 											);
 										})}
-										<td className="p-2 border-r border-border last:border-r-0 align-top">
-											<div className="flex flex-col gap-1">
-												<div className="flex items-center gap-1">
-													<Button
-														type="button"
-														size="xs"
-														variant="accent"
-														disabled={isMutatingRow}
-														onClick={submitCreateRow}
-													>
-														{isMutatingRow ? "Saving..." : "Save"}
-													</Button>
-													<Button
-														type="button"
-														size="xs"
-														variant="outline"
-														disabled={isMutatingRow}
-														onClick={cancelCreateRow}
-													>
-														Cancel
-													</Button>
-												</div>
-												{newRowError ? (
-													<p className="text-[11px] font-bold text-destructive">
-														{newRowError}
-													</p>
-												) : null}
-											</div>
-										</td>
 									</tr>
 								) : null}
 
@@ -897,7 +1256,67 @@ function VisualizationPage() {
 												key={rowKey}
 												className="border-b border-border hover:bg-secondary/40"
 											>
-												{(tableDataQuery.data?.columns ?? []).map((column) => {
+												{table.getVisibleLeafColumns().map((visibleColumn) => {
+													if (visibleColumn.id === "__actions") {
+														return (
+															<td
+																key={`${rowKey}-actions`}
+																className={`border-r border-border last:border-r-0 align-top ${densityCellClass}`}
+																style={{
+																	...getPinnedCellStyle(visibleColumn),
+																	width: visibleColumn.getSize(),
+																}}
+															>
+																{isEditingThisRow ? (
+																	<div className="flex items-center gap-1">
+																		<Button
+																			type="button"
+																			size="xs"
+																			variant="accent"
+																			disabled={isMutatingRow}
+																			onClick={submitInlineEditRow}
+																		>
+																			{isMutatingRow ? "Saving..." : "Save"}
+																		</Button>
+																		<Button
+																			type="button"
+																			size="xs"
+																			variant="outline"
+																			disabled={isMutatingRow}
+																			onClick={cancelInlineEditRow}
+																		>
+																			Cancel
+																		</Button>
+																	</div>
+																) : (
+																	<Button
+																		type="button"
+																		size="xs"
+																		variant="outline"
+																		disabled={
+																			!canEditRows ||
+																			!hasEditableIdentity ||
+																			isCreatingRow ||
+																			isMutatingRow
+																		}
+																		onClick={() =>
+																			handleOpenInlineEditRow(rowIndex, row)
+																		}
+																	>
+																		Edit
+																	</Button>
+																)}
+															</td>
+														);
+													}
+
+													const column = activeColumnsByName.get(
+														visibleColumn.id,
+													);
+													if (!column) {
+														return null;
+													}
+
 													const isEditableCell =
 														isEditingThisRow &&
 														updateEditableColumnNames.has(column.name);
@@ -905,7 +1324,11 @@ function VisualizationPage() {
 													return (
 														<td
 															key={`${rowKey}-${column.name}`}
-															className="p-2 border-r border-border last:border-r-0 align-top"
+															className={`border-r border-border last:border-r-0 align-top ${densityCellClass}`}
+															style={{
+																...getPinnedCellStyle(visibleColumn),
+																width: visibleColumn.getSize(),
+															}}
 														>
 															{isEditableCell ? (
 																<div className="space-y-1">
@@ -918,7 +1341,9 @@ function VisualizationPage() {
 																				event.target.value,
 																			)
 																		}
-																		className="h-8 rounded-none border border-border bg-card text-xs font-bold"
+																		className={`rounded-none border border-border bg-card text-xs font-bold ${
+																			density === "compact" ? "h-7" : "h-8"
+																		}`}
 																		placeholder={column.dataType}
 																		disabled={isMutatingRow}
 																	/>
@@ -929,52 +1354,16 @@ function VisualizationPage() {
 																	) : null}
 																</div>
 															) : (
-																formatCellValue(row[column.name])
+																<span
+																	className="block truncate whitespace-nowrap"
+																	title={toCellText(row[column.name])}
+																>
+																	{toCellText(row[column.name])}
+																</span>
 															)}
 														</td>
 													);
 												})}
-												<td className="p-2 border-r border-border last:border-r-0 align-top">
-													{isEditingThisRow ? (
-														<div className="flex items-center gap-1">
-															<Button
-																type="button"
-																size="xs"
-																variant="accent"
-																disabled={isMutatingRow}
-																onClick={submitInlineEditRow}
-															>
-																{isMutatingRow ? "Saving..." : "Save"}
-															</Button>
-															<Button
-																type="button"
-																size="xs"
-																variant="outline"
-																disabled={isMutatingRow}
-																onClick={cancelInlineEditRow}
-															>
-																Cancel
-															</Button>
-														</div>
-													) : (
-														<Button
-															type="button"
-															size="xs"
-															variant="outline"
-															disabled={
-																!canEditRows ||
-																!hasEditableIdentity ||
-																isCreatingRow ||
-																isMutatingRow
-															}
-															onClick={() =>
-																handleOpenInlineEditRow(rowIndex, row)
-															}
-														>
-															Edit
-														</Button>
-													)}
-												</td>
 											</tr>
 										);
 									})
