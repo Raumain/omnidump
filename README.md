@@ -22,7 +22,7 @@ Create a `compose.yml` file:
 ```yaml
 services:
   omnidump:
-    image: your-dockerhub-username/omnidump:latest
+    image: raumain/omnidump:latest
     container_name: omnidump
     init: true
     ports:
@@ -64,10 +64,10 @@ If you prefer using the Docker CLI directly, use the following command:
 ```bash
 docker run -d \
   --name omnidump \
-  -p 3000:3000 \
+  -p 5555:3000 \
   -v omnidump_data:/app/data \
   --add-host=host.docker.internal:host-gateway \
-  your-dockerhub-username/omnidump:latest
+  raumain/omnidump:latest
 ```
 
 ---
